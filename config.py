@@ -1,14 +1,19 @@
-# Vehicle Counter Configuration
-# Default settings for the application
+"""Compatibility wrapper for the packaged config module."""
 
-# YOLO confidence threshold (placeholder for future use)
-CONFIDENCE_THRESHOLD = 0.5
+from src.vehicle_counter.config import (
+    CONFIDENCE_THRESHOLD,
+    FRAME_SKIP,
+    LINE_POSITION,
+    WINDOW_HEIGHT,
+    WINDOW_TITLE,
+    WINDOW_WIDTH,
+)
 
-# Default video processing settings (placeholders)
-FRAME_SKIP = 1  # Process every frame
-LINE_POSITION = 0.5  # Default count line position (as fraction of height)
-
-# UI settings
-WINDOW_TITLE = "Vehicle Counter"
-WINDOW_WIDTH = 800
-WINDOW_HEIGHT = 600
+__all__ = [
+    "CONFIDENCE_THRESHOLD",
+    "FRAME_SKIP",
+    "LINE_POSITION",
+    "WINDOW_TITLE",
+    "WINDOW_WIDTH",
+    "WINDOW_HEIGHT",
+]

@@ -1,14 +1,5 @@
-# Utility functions
-# Helper functions for video I/O, drawing, etc.
+"""Compatibility wrapper for the packaged utility module."""
 
-def load_video(path):
-    # Placeholder
-    pass
+from vehicle_counter.utils import draw_bounding_boxes, load_video, save_video
 
-def save_video(frames, path):
-    # Placeholder
-    pass
-
-def draw_bounding_boxes(frame, detections):
-    # Placeholder
-    return frame
+__all__ = ["load_video", "save_video", "draw_bounding_boxes"]

@@ -1,10 +1,5 @@
-# Placeholder for tracking logic
-# Vehicle tracking and counting will be implemented here
+"""Compatibility wrapper for the packaged tracking module."""
 
-def track_vehicles(detections):
-    # Placeholder - return empty counts
-    return {"cars": 0, "trucks": 0, "total": 0}
+from vehicle_counter.tracking import did_cross_line, track_vehicles
 
-def count_crossings(tracks, line_position):
-    # Placeholder
-    return 0
+__all__ = ["track_vehicles", "did_cross_line"]

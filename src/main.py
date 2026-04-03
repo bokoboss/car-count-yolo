@@ -1,14 +1,7 @@
-# Vehicle Counter - Main Entry Point
+"""Compatibility wrapper for the packaged app entry point."""
 
-import sys
-from PyQt6.QtWidgets import QApplication
-from gui import MainWindow
+from vehicle_counter.main import main
 
-def main():
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()

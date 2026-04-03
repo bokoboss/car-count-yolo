@@ -1,10 +1,5 @@
-# Placeholder for detection logic
-# YOLO model loading and inference will be implemented here
+"""Compatibility wrapper for the packaged detection module."""
 
-def load_model():
-    # Placeholder
-    pass
+from vehicle_counter.detection import detect_vehicles, load_model
 
-def detect_vehicles(frame):
-    # Placeholder - return empty list
-    return []
+__all__ = ["load_model", "detect_vehicles"]
