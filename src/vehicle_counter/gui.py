@@ -1244,7 +1244,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            error_message = export_results_file(
+            export_result = export_results_file(
                 file_path=file_path,
                 results=self.count_results,
                 source_details=self.get_export_source_details(),
@@ -1255,12 +1255,15 @@ class MainWindow(QMainWindow):
             self.set_status(f"Status: Export failed. {exc}")
             return
 
-        if error_message:
-            self.set_status(f"Status: {error_message}")
+        if export_result and export_result.get("error"):
+            self.set_status(f"Status: {export_result['error']}")
             return
 
+        created_files = (export_result or {}).get("created_files") or [str(Path(file_path))]
+        saved_names = ", ".join(Path(path).name for path in created_files)
         self.set_status(
-            f"Status: Results exported successfully.\nSaved file: {Path(file_path).name}"
+            "Status: Results exported successfully.\n"
+            f"Created: {saved_names}"
         )
 
     def stop_counting(self):

@@ -108,6 +108,8 @@ def build_empty_counts(line_keys=None):
         },
         "counted_track_ids": {line_key: set() for line_key in line_keys},
         "processed_frames": 0,
+        "events": [],
+        "event_sequence": 0,
     }
 
 
@@ -256,6 +258,7 @@ def process_sequential_video(
             if total_frames
             else 0
         )
+        source_fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
         frame_number = 0
 
         while True:
@@ -282,6 +285,8 @@ def process_sequential_video(
                 settings=settings,
                 track_label_mode=track_label_mode,
                 annotated_video_session=annotated_video_session,
+                frame_index=frame_number,
+                source_fps=source_fps,
             )
             if isinstance(latest_frame, dict):
                 return None, counts, latest_frame
@@ -330,8 +335,8 @@ def process_live_stream_latest_frame(
     last_progress_time = 0.0
     fetched_frame_count = 0
     last_stream_message = None
+    source_fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
     if annotated_video_session and annotated_video_session.get("enabled"):
-        source_fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
         if source_fps > 0:
             annotated_video_session["fps"] = source_fps
 
@@ -379,6 +384,8 @@ def process_live_stream_latest_frame(
                 settings=settings,
                 track_label_mode=track_label_mode,
                 annotated_video_session=annotated_video_session,
+                frame_index=fetched_frame_count,
+                source_fps=source_fps,
             )
             if isinstance(latest_frame, dict):
                 return None, counts, latest_frame
@@ -424,6 +431,8 @@ def process_frame_for_counting(
     settings,
     track_label_mode,
     annotated_video_session,
+    frame_index,
+    source_fps,
 ):
     counts["processed_frames"] += 1
 
@@ -457,6 +466,8 @@ def process_frame_for_counting(
         last_positions=last_positions,
         line_definitions=line_definitions,
         counts=counts,
+        frame_index=frame_index,
+        source_fps=source_fps,
     )
     write_annotated_video_frame(
         annotated_video_session=annotated_video_session,
@@ -507,7 +518,15 @@ def reset_tracker_state(model):
             reset()
 
 
-def update_counts_from_result(result, model, last_positions, line_definitions, counts):
+def update_counts_from_result(
+    result,
+    model,
+    last_positions,
+    line_definitions,
+    counts,
+    frame_index,
+    source_fps,
+):
     if result.boxes is None or result.boxes.id is None or result.boxes.cls is None:
         return
 
@@ -544,6 +563,15 @@ def update_counts_from_result(result, model, last_positions, line_definitions, c
                     class_name,
                     direction,
                 )
+                append_count_event(
+                    counts=counts,
+                    line_key=line_key,
+                    direction=direction,
+                    class_name=class_name,
+                    track_id=track_id,
+                    frame_index=frame_index,
+                    source_fps=source_fps,
+                )
 
         last_positions[track_id] = center_point
 
@@ -566,6 +594,49 @@ def increment_result_counts(result_bucket, class_name, direction):
         direction_counts = result_bucket["direction_counts"][direction]
         direction_counts[class_name] = direction_counts.get(class_name, 0) + 1
     result_bucket["total"] += 1
+
+
+def append_count_event(
+    counts,
+    line_key,
+    direction,
+    class_name,
+    track_id,
+    frame_index,
+    source_fps,
+):
+    counts["event_sequence"] += 1
+    elapsed_seconds = (
+        max(0.0, float(frame_index - 1) / float(source_fps))
+        if source_fps and source_fps > 0
+        else None
+    )
+    counts["events"].append(
+        {
+            "event_id": f"EVT-{counts['event_sequence']:06d}",
+            "line_id": line_key,
+            "direction": direction,
+            "vehicle_class": class_name,
+            "track_id": track_id,
+            "frame_index": frame_index,
+            "elapsed_seconds": elapsed_seconds,
+            "event_timecode": format_event_timecode(elapsed_seconds),
+        }
+    )
+
+
+def format_event_timecode(elapsed_seconds):
+    if elapsed_seconds is None:
+        return ""
+
+    total_milliseconds = max(0, round(elapsed_seconds * 1000))
+    hours = total_milliseconds // 3600000
+    remaining = total_milliseconds % 3600000
+    minutes = remaining // 60000
+    remaining %= 60000
+    seconds = remaining // 1000
+    milliseconds = remaining % 1000
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
 
 
 def should_send_progress_update(processed_frames, total_frames):
