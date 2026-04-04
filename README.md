@@ -1,98 +1,335 @@
-# Vehicle Counter
+# Vehicle Counter สำหรับ Windows
 
-A simple desktop application for counting vehicles in videos using YOLO object detection.
+โปรแกรมนับจำนวนยานพาหนะจากวิดีโอหรือสตรีม โดยใช้ YOLO สำหรับตรวจจับและติดตามวัตถุ เหมาะสำหรับงานนับรถที่ต้องการดูภาพตัวอย่าง วางเส้นนับ แยกทิศทาง และส่งออกผลลัพธ์ได้ในรูปแบบไฟล์
 
-## Prerequisites
+README นี้เขียนสำหรับผู้เริ่มต้น โดยเน้นขั้นตอนใช้งานบน Windows แบบทีละขั้น
 
-You need Python installed on your Windows computer. If you don't have it, download and install Python 3.10 or later from the official website: https://www.python.org/downloads/
+## โปรแกรมนี้ทำอะไรได้บ้าง
 
-During installation, make sure to check the box "Add Python to PATH".
+- เปิดไฟล์วิดีโอจากเครื่อง
+- เปิด YouTube URL หรือ Direct Camera Stream URL
+- วางเส้นนับได้สูงสุด 3 เส้น
+- ตั้งชื่อทิศทาง `A -> B` และ `B -> A` ของแต่ละเส้น
+- ดูผลนับรวม และผลแยกตามประเภทรถ
+- ส่งออกผลลัพธ์เป็น `.csv` หรือ `.xlsx`
+- บันทึกวิดีโอแบบมีเส้นนับและกรอบวัตถุประกอบได้
 
-## Setup Instructions
+## ความต้องการของระบบ
 
-### 1. Create a Virtual Environment
+- Windows 10 หรือ Windows 11
+- Python 3.10 หรือใหม่กว่า
+- อินเทอร์เน็ตในช่วงติดตั้งแพ็กเกจครั้งแรก
+- ถ้าจะใช้ YouTube URL ควรมีอินเทอร์เน็ตที่เสถียร
 
-A virtual environment keeps this project's dependencies separate from your system Python.
+## วิธีดาวน์โหลดโปรเจกต์จาก GitHub
 
-1. Open Command Prompt or PowerShell (search for "cmd" or "powershell" in Windows search).
-2. Navigate to your project folder:
-   ```
-   cd C:\MyRD\car-count-yolo
-   ```
-3. Create a virtual environment:
-   ```
-   python -m venv venv
-   ```
-4. Activate the virtual environment:
-   ```
-   venv\Scripts\activate
-   ```
-   You should see `(venv)` at the beginning of your command prompt.
+### วิธีที่ 1: ดาวน์โหลดเป็น ZIP
 
-### 2. Install Dependencies
+1. เปิดหน้า GitHub ของโปรเจกต์
+2. กดปุ่ม `Code`
+3. กด `Download ZIP`
+4. แตกไฟล์ ZIP ไปไว้ในโฟลเดอร์ที่ต้องการ เช่น `C:\vehicle-counter`
 
-With the virtual environment activated, install the required packages:
+### วิธีที่ 2: ใช้ git clone
 
+วิธีนี้เหมาะกับคนที่ติดตั้ง Git ไว้แล้ว
+
+```powershell
+git clone <repo-url>
+cd <repo-folder>
 ```
+
+แทน `<repo-url>` ด้วยลิงก์ GitHub จริงของโปรเจกต์ และแทน `<repo-folder>` ด้วยชื่อโฟลเดอร์ที่ถูกสร้างหลัง clone
+
+## วิธีติดตั้ง Python บน Windows
+
+ถ้ายังไม่มี Python ให้ทำตามนี้
+
+1. เปิดเว็บ: https://www.python.org/downloads/windows/
+2. ดาวน์โหลด Python เวอร์ชันใหม่ล่าสุด
+3. เปิดไฟล์ติดตั้ง
+4. สำคัญมาก: ให้ติ๊ก `Add Python to PATH`
+5. กดติดตั้งตามขั้นตอนจนเสร็จ
+
+หลังติดตั้งเสร็จ แนะนำให้ปิดแล้วเปิด PowerShell หรือ Command Prompt ใหม่อีกครั้ง
+
+## ติดตั้งแบบง่ายสำหรับผู้เริ่มต้น
+
+ถ้าคุณโหลดโปรเจกต์มาเรียบร้อยแล้ว ให้ลองวิธีนี้ก่อน
+
+1. เข้าไปในโฟลเดอร์โปรเจกต์
+2. ดับเบิลคลิกไฟล์ `setup_windows.bat`
+3. รอให้โปรแกรมสร้าง virtual environment และติดตั้งแพ็กเกจ
+4. เมื่อติดตั้งเสร็จ ให้ดับเบิลคลิก `run_app.bat`
+
+วิธีนี้เป็นวิธีที่ง่ายที่สุดสำหรับผู้ใช้ Windows ทั่วไป
+
+## ติดตั้งแบบทีละขั้นด้วย PowerShell
+
+ถ้าคุณต้องการทำเองทีละขั้น ให้เปิด PowerShell ในโฟลเดอร์โปรเจกต์ แล้วทำตามนี้
+
+### 1. เข้าโฟลเดอร์โปรเจกต์
+
+```powershell
+cd C:\path\to\your\project
+```
+
+### 2. สร้าง virtual environment
+
+```powershell
+python -m venv .venv
+```
+
+ถ้าเครื่องคุณใช้ `py` แทน `python` ให้ใช้:
+
+```powershell
+py -3 -m venv .venv
+```
+
+### 3. เปิดใช้งาน virtual environment
+
+```powershell
+.venv\Scripts\activate
+```
+
+ถ้าสำเร็จ มักจะเห็นคำว่า `(.venv)` ขึ้นหน้าบรรทัดคำสั่ง
+
+### 4. ติดตั้งแพ็กเกจที่จำเป็น
+
+```powershell
 pip install -r requirements.txt
 ```
 
-This will install PyQt6 for the graphical user interface, OpenCV for video preview, Ultralytics YOLO for detection and tracking, and `openpyxl` for Excel export.
+### 5. เปิดโปรแกรม
 
-### 3. Run the Application
-
-Still in the activated virtual environment, run this command from the project root:
-
-```
+```powershell
 python -m src.vehicle_counter
 ```
 
-This runs the app as a Python package, which makes imports consistent and avoids errors like `ModuleNotFoundError: No module named 'config'`.
+## วิธีเปิดโปรแกรมในครั้งถัดไป
 
-## Test The Video Preview
+### แบบง่าย
 
-1. Start the app:
-   ```
-   python -m src.vehicle_counter
-   ```
-2. Click `Open Video`.
-3. Choose a local `.mp4`, `.avi`, `.mov`, or `.mkv` file.
-4. Confirm that the first frame appears in the preview area.
-5. Check that the status area shows the selected file name and a success message.
-6. Try cancelling the dialog or choosing an invalid file type to confirm the error handling messages appear.
+ดับเบิลคลิก `run_app.bat`
 
-## Test Single-Frame Detection
+### แบบใช้ PowerShell
 
-1. Start the app:
-   ```
-   python -m src.vehicle_counter
-   ```
-2. Click `Open Video` and choose a video file.
-3. After the first frame appears, click `Detect Vehicles`.
-4. Wait a moment while the YOLO model loads. On the first run, Ultralytics may download model weights automatically.
-5. Check that bounding boxes appear on the current preview image.
-6. Check that the status area shows the total detected objects and counts by class.
+```powershell
+cd C:\path\to\your\project
+.venv\Scripts\activate
+python -m src.vehicle_counter
+```
 
-## What You Should See
+## วิธีใช้งานโปรแกรมแบบทีละขั้น
 
-- A window titled "Vehicle Counter" should open.
-- The window should have seven buttons: "Open Video", "Draw Count Line", "Clear Count Line", "Detect Vehicles", "Start Counting", "Stop Counting", "Export Results".
-- Below the buttons, there should be a gray preview area with text "Preview Area - Video will appear here".
-- At the bottom, there should be a text area with the message "Welcome to Vehicle Counter! Select a video to begin."
-- Clicking `Open Video` should let you choose a video file and show the first frame in the preview area.
-- Clicking `Draw Count Line` should let you place one line on the preview image.
-- Clicking `Detect Vehicles` should run detection on the current preview image only.
-- Clicking `Export Results` should save the current in-memory counting results to `.csv` or `.xlsx` after results are available.
+### 1. เลือกแหล่งวิดีโอ
 
-## Troubleshooting
+ในส่วน `Source Type` คุณสามารถเลือกได้ เช่น
 
-- If you get an error about "python" not being recognized, make sure Python is installed and added to PATH.
-- If PyQt6 installation fails, try updating pip first: `python -m pip install --upgrade pip`
-- If `cv2` is missing, reinstall dependencies with `pip install -r requirements.txt`.
-- If the YOLO model cannot load on first use, check that `ultralytics` installed correctly and that the machine can download model weights if they are not cached yet.
-- If `.xlsx` export fails, check that `openpyxl` installed correctly with `pip install -r requirements.txt`.
-- If the window doesn't open, check that you're in `C:\MyRD\car-count-yolo`, the virtual environment is activated, and you are using `python -m src.vehicle_counter`.
+- `Local Video File` สำหรับไฟล์วิดีโอในเครื่อง
+- `YouTube URL` สำหรับลิงก์ YouTube
+- `Direct Camera Stream URL` สำหรับลิงก์กล้องหรือสตรีมโดยตรง
 
-## Next Steps
+### 2. โหลดภาพตัวอย่าง
 
-This is still an early phase of the project. Future phases will add multi-frame processing, tracking, and counting logic.
+- ถ้าเป็นไฟล์ในเครื่อง ให้กดเลือกไฟล์
+- ถ้าเป็น YouTube หรือสตรีม ให้ใส่ URL
+- จากนั้นกด `Load Source Preview`
+
+เมื่อสำเร็จ จะเห็นภาพตัวอย่างในหน้าพรีวิว
+
+### 3. วางหรือแก้ไขเส้นนับ
+
+- เลือก `Active Line` ว่าต้องการแก้ไข `Line 1`, `Line 2` หรือ `Line 3`
+- กด `Place / Edit Line`
+- คลิกวางเส้นบนภาพ
+- หลังวางแล้ว สามารถลากปลายเส้นหรือเลื่อนทั้งเส้นเพื่อปรับตำแหน่งได้
+
+### 4. ตั้งชื่อทิศทาง
+
+- กด `Name Directions`
+- ใส่ชื่อของ `A -> B`
+- ใส่ชื่อของ `B -> A`
+
+ตัวอย่าง:
+
+- `A -> B = เข้าเมือง`
+- `B -> A = ออกเมือง`
+
+### 5. เลือก Preset หรือปรับค่าการนับ
+
+ค่าเริ่มต้นของโปรแกรมคือ `Balanced Counting` ซึ่งเหมาะกับการใช้งานทั่วไป
+
+ถ้าต้องการปรับเอง สามารถเปลี่ยน Preset หรือปรับค่าต่าง ๆ ได้ในส่วน `Settings`
+
+### 6. เริ่มนับ
+
+กด `Start Counting`
+
+ระหว่างนับ:
+
+- ภาพพรีวิวจะอัปเดต
+- แดชบอร์ดด้านขวาจะอัปเดตผลแบบสด
+- สามารถเปลี่ยน `Active Line` เพื่อดูรายละเอียดของเส้นอื่นได้
+
+### 7. หยุดนับ
+
+กด `Stop Counting`
+
+ผลที่นับได้จนถึงตอนหยุดยังคงอยู่ และสามารถส่งออกได้
+
+### 8. ส่งออกผลลัพธ์
+
+กด `Export Results`
+
+โปรแกรมจะให้เลือกบันทึกเป็น:
+
+- `.csv`
+- `.xlsx`
+
+### 9. บันทึกวิดีโอที่มีภาพประกอบการนับ
+
+ถ้าต้องการบันทึกวิดีโอที่มีกรอบวัตถุ เส้นนับ และข้อมูลสรุปบนภาพ
+
+1. ไปที่ `Settings`
+2. เปิด `Save annotated review video`
+3. เลือกตำแหน่งไฟล์ปลายทาง
+4. เริ่มนับตามปกติ
+
+เมื่อจบการนับ จะได้วิดีโอสำหรับทบทวนย้อนหลัง
+
+## อธิบายค่าที่สำคัญแบบง่าย
+
+### Preset
+
+- `Balanced Counting`
+  เหมาะกับการใช้งานทั่วไป เป็นค่าที่แนะนำสำหรับผู้ใช้ส่วนใหญ่
+- `Live Low Latency`
+  เหมาะกับสตรีมสดที่ต้องการให้ภาพตามเวลาจริงมากขึ้น
+- `Motorcycle Focus`
+  เหมาะกับกรณีที่อยากเน้นการนับมอเตอร์ไซค์มากขึ้น
+
+### Model
+
+- `Nano - Fastest / Lightest`
+  เร็วที่สุด ใช้ทรัพยากรน้อย เหมาะกับเครื่องไม่แรงมาก
+- `Small - Balanced`
+  สมดุลระหว่างความเร็วและความแม่นยำ เหมาะกับการใช้งานทั่วไป
+- `Medium - Slower / More Accurate`
+  ช้ากว่า แต่มีโอกาสแม่นยำขึ้น เหมาะกับเครื่องที่แรงพอ
+
+### Confidence
+
+ค่ายิ่งสูง โปรแกรมจะเข้มงวดมากขึ้นในการยอมรับการตรวจจับ
+
+### Frame Skip
+
+ค่ายิ่งสูง โปรแกรมจะข้ามบางเฟรมเพื่อให้ทำงานเร็วขึ้น แต่อาจพลาดบางจังหวะ
+
+### Low Latency
+
+- สำหรับ `Local Video File` โปรแกรมจะปิดค่านี้ให้โดยอัตโนมัติเป็นค่าเริ่มต้น
+- สำหรับ `YouTube URL` และ `Direct Camera Stream URL` โปรแกรมจะเปิดค่านี้ให้โดยอัตโนมัติเป็นค่าเริ่มต้น
+- คุณยังสามารถเปิดหรือปิดเองได้ตลอด
+
+### Annotated Video
+
+ถ้าเปิดไว้ โปรแกรมจะบันทึกวิดีโอผลลัพธ์ที่มีเส้นนับ กรอบวัตถุ และข้อมูลสรุปบนภาพ
+
+## ปัญหาที่พบบ่อยและวิธีแก้
+
+### 1. ดับเบิลคลิก `setup_windows.bat` แล้วไม่ทำงาน
+
+- ตรวจสอบว่าติดตั้ง Python แล้ว
+- ถ้ายังไม่ได้ติดตั้ง ให้ติดตั้งจาก https://www.python.org/downloads/windows/
+- ตอนติดตั้งต้องติ๊ก `Add Python to PATH`
+
+### 2. ขึ้นข้อความว่า `python is not recognized`
+
+- หมายถึง Windows หา Python ไม่เจอ
+- ให้ติดตั้ง Python ใหม่ แล้วติ๊ก `Add Python to PATH`
+- จากนั้นปิดและเปิดหน้าต่างคำสั่งใหม่
+
+### 3. ติดตั้งแพ็กเกจไม่สำเร็จ
+
+ลองรัน:
+
+```powershell
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 4. โปรแกรมเปิดไม่ได้หลังติดตั้ง
+
+ลองรันใหม่ด้วย:
+
+```powershell
+cd C:\path\to\your\project
+.venv\Scripts\activate
+python -m src.vehicle_counter
+```
+
+### 5. โหลด YouTube ไม่ได้
+
+ให้ลองอัปเดต `yt-dlp`
+
+```powershell
+pip install --upgrade yt-dlp
+```
+
+### 6. โมเดล YOLO โหลดไม่ได้
+
+- ในการใช้งานครั้งแรก โปรแกรมหรือไลบรารีอาจต้องดาวน์โหลดไฟล์โมเดล
+- ตรวจสอบว่าอินเทอร์เน็ตใช้งานได้
+- ไม่ควรนำไฟล์ `.pt` ขนาดใหญ่ขึ้น GitHub เว้นแต่คุณตั้งใจจะแจกไฟล์โมเดลเอง
+
+### 7. วิดีโอหรือสตรีมช้า
+
+- ลองใช้ `Nano` หรือ `Small`
+- เพิ่ม `Frame Skip`
+- ใช้ `Live Low Latency` ถ้าเป็นสตรีมสด
+
+## การอัปเดตโปรเจกต์จาก GitHub ภายหลัง
+
+### ถ้าคุณดาวน์โหลดแบบ ZIP
+
+- ดาวน์โหลด ZIP ใหม่จาก GitHub
+- แตกไฟล์ทับหรือย้ายไปโฟลเดอร์ใหม่
+- ถ้าจำเป็น ให้รัน `setup_windows.bat` อีกครั้ง
+
+### ถ้าคุณใช้ git clone
+
+```powershell
+git pull
+```
+
+หลังอัปเดตแล้ว แนะนำให้ติดตั้งแพ็กเกจอีกครั้งเผื่อมีการเปลี่ยนแปลง
+
+```powershell
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+## สิ่งที่ควรและไม่ควรอัปโหลดขึ้น GitHub
+
+### ควรอัปโหลด
+
+- โค้ดในโฟลเดอร์ `src`
+- `README.md`
+- `requirements.txt`
+- `setup_windows.bat`
+- `run_app.bat`
+- ไฟล์ตั้งค่าหรือเอกสารที่จำเป็น
+
+### ไม่ควรอัปโหลด
+
+- โฟลเดอร์ virtual environment เช่น `.venv`, `.venv-1`, `venv`
+- ไฟล์ผลลัพธ์ เช่น `.csv`, `.xlsx`, `.mp4`, `.avi`
+- โฟลเดอร์ `outputs`
+- ไฟล์โมเดล เช่น `.pt`
+- ไฟล์ cache ต่าง ๆ เช่น `__pycache__`
+
+## หมายเหตุ
+
+- ขั้นตอนนี้ยังไม่ได้แพ็กเป็น `.exe`
+- ถ้าจะเผยแพร่ให้ผู้ใช้ทั่วไปมากขึ้นในอนาคต อาจค่อยทำตัวติดตั้งหรือไฟล์ `.exe` ในขั้นตอนถัดไป

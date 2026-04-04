@@ -82,6 +82,9 @@ def normalize_settings(settings):
         "enabled_classes": normalize_enabled_classes(
             settings.get("enabled_classes", ROAD_USER_CLASS_NAMES)
         ),
+        "prioritize_low_latency_live_streams": normalize_boolean(
+            settings.get("prioritize_low_latency_live_streams", True)
+        ),
     }
 
 
@@ -115,3 +118,11 @@ def normalize_enabled_classes(value):
     if not normalized_classes:
         return list(ROAD_USER_CLASS_NAMES)
     return normalized_classes
+
+
+def normalize_boolean(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
