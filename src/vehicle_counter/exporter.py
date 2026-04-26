@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 
 from openpyxl import Workbook
 
+from . import config
 
 DIRECTION_NEGATIVE_TO_POSITIVE = "negative_to_positive"
 DIRECTION_POSITIVE_TO_NEGATIVE = "positive_to_negative"
@@ -13,7 +14,7 @@ DIRECTION_TO_EXPORT_LABEL = {
     DIRECTION_POSITIVE_TO_NEGATIVE: "B -> A",
 }
 DEFAULT_LINE_IDS = ("line_1", "line_2", "line_3")
-DEFAULT_CLASSES = ("car", "motorcycle", "bus", "truck", "bicycle")
+DEFAULT_CLASSES = config.SUPPORTED_COUNT_CLASSES
 INTERVAL_MINUTES_OPTIONS = (1, 5, 15)
 
 
@@ -50,6 +51,7 @@ def build_export_tables(results, source_details, direction_labels, settings):
         "source_is_live": source_details.get("is_live", False),
         "source_stream_format": source_details.get("stream_format") or "",
         "exported_at": exported_at,
+        "counting_mode": settings.get("counting_mode", config.DEFAULT_COUNTING_MODE),
         "active_preset": settings.get("preset_name", ""),
         "model_size": settings.get("model_size", ""),
         "model_size_label": settings.get("model_size_label", settings.get("model_size", "")),
@@ -105,15 +107,15 @@ def build_export_tables(results, source_details, direction_labels, settings):
                 else direction_b_label
             )
             class_counts = direction_counts.get(direction_key, {})
-            for vehicle_class in DEFAULT_CLASSES:
+            for count_class in DEFAULT_CLASSES:
                 detail_rows.append(
                     {
                         "line_id": line_id,
                         "line_name": line_name,
                         "direction": direction_name,
                         "direction_label": movement_label,
-                        "vehicle_class": vehicle_class,
-                        "count": class_counts.get(vehicle_class, 0),
+                        "count_class": count_class,
+                        "count": class_counts.get(count_class, 0),
                     }
                 )
 
@@ -244,7 +246,7 @@ def build_event_rows(results, source_display_name, direction_labels):
                 "line_name": build_line_name(line_id, direction_a_label, direction_b_label),
                 "direction": DIRECTION_TO_EXPORT_LABEL.get(direction, direction),
                 "direction_label": direction_label,
-                "vehicle_class": event.get("vehicle_class", ""),
+                "count_class": event.get("vehicle_class", ""),
                 "track_id": event.get("track_id", ""),
                 "frame_index": event.get("frame_index", ""),
                 "elapsed_seconds": event.get("elapsed_seconds", ""),
@@ -272,7 +274,7 @@ def build_interval_rows(event_rows, interval_minutes):
             event.get("line_name", ""),
             event.get("direction", ""),
             event.get("direction_label", ""),
-            event.get("vehicle_class", ""),
+            event.get("count_class", ""),
         )
         grouped_counts[group_key] = grouped_counts.get(group_key, 0) + 1
 
@@ -284,7 +286,7 @@ def build_interval_rows(event_rows, interval_minutes):
             line_name,
             direction,
             direction_label,
-            vehicle_class,
+            count_class,
         ) = group_key
         interval_start_seconds = interval_index * interval_seconds
         interval_end_seconds = interval_start_seconds + interval_seconds
@@ -300,7 +302,7 @@ def build_interval_rows(event_rows, interval_minutes):
                 "line_name": line_name,
                 "direction": direction,
                 "direction_label": direction_label,
-                "vehicle_class": vehicle_class,
+                "count_class": count_class,
                 "count": grouped_counts[group_key],
             }
         )

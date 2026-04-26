@@ -2,6 +2,7 @@ import threading
 import time
 from pathlib import Path
 
+from . import config
 from .detection import get_target_class_ids, load_model, normalize_settings
 from .sources import VideoSource
 from .utils import (
@@ -145,13 +146,7 @@ def sign_with_dead_zone(value, tolerance_pixels):
 
 
 def build_empty_class_counts():
-    return {
-        "bicycle": 0,
-        "motorcycle": 0,
-        "car": 0,
-        "bus": 0,
-        "truck": 0,
-    }
+    return {class_name: 0 for class_name in config.SUPPORTED_COUNT_CLASSES}
 
 
 def build_empty_direction_counts():

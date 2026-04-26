@@ -68,6 +68,26 @@ LINE_COLORS = {
     "line_2": "#0a84ff",
     "line_3": "#34c759",
 }
+COUNTING_MODE_LABELS = {
+    config.COUNTING_MODE_VEHICLE: "Vehicle Counting",
+    config.COUNTING_MODE_PEOPLE: "People Counting",
+}
+CLASS_DISPLAY_LABELS = {
+    "car": "Car",
+    "motorcycle": "Motorcycle",
+    "bus": "Bus",
+    "truck": "Truck",
+    "bicycle": "Bicycle",
+    "person": "Person",
+}
+CLASS_SHORT_LABELS = {
+    "car": "Car",
+    "motorcycle": "Moto",
+    "bus": "Bus",
+    "truck": "Truck",
+    "bicycle": "Bike",
+    "person": "Person",
+}
 MODEL_OPTION_LABELS = {
     "nano": "Nano - Fastest / Lightest",
     "small": "Small - Balanced",
@@ -166,6 +186,9 @@ class MainWindow(QMainWindow):
         self.active_line_detail_labels = {}
         self.direction_section_widgets = {}
         self.overall_count_labels = {}
+        self.overall_count_widgets = {}
+        self.overall_class_chip_widgets = {}
+        self.line_class_header_widgets = {}
         self.run_settings_value_labels = {}
         self.preview_frame = None
         self.detected_preview_frame = None
@@ -185,8 +208,10 @@ class MainWindow(QMainWindow):
         self.line_hover_target = None
         self.initial_splitter_applied = False
         self.applying_preset = False
+        self.applying_counting_mode = False
         self.low_latency_manually_overridden = False
         self.active_preset_name = "Custom"
+        self.counting_mode = config.DEFAULT_COUNTING_MODE
         self.direction_labels_by_line = self.build_default_direction_labels_by_line()
         self.setWindowTitle(config.WINDOW_TITLE)
         self.setGeometry(100, 100, config.WINDOW_WIDTH, config.WINDOW_HEIGHT)
@@ -196,6 +221,7 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
+        central_widget.setStyleSheet(self.build_app_stylesheet())
 
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(8, 8, 8, 8)
@@ -220,9 +246,11 @@ class MainWindow(QMainWindow):
         left_layout.setSpacing(8)
         left_layout.addWidget(self.build_source_group())
         button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 0, 0, 0)
         button_layout.setSpacing(6)
 
-        active_line_label = QLabel("Active Line")
+        active_line_label = QLabel("Line Focus")
+        active_line_label.setProperty("role", "sectionCaption")
         button_layout.addWidget(active_line_label)
 
         self.active_line_combobox = QComboBox()
@@ -231,27 +259,29 @@ class MainWindow(QMainWindow):
         self.active_line_combobox.currentIndexChanged.connect(self.handle_active_line_changed)
         button_layout.addWidget(self.active_line_combobox)
 
-        self.draw_line_btn = QPushButton("Place / Edit Line")
+        self.draw_line_btn = QPushButton("Place Line")
         self.draw_line_btn.clicked.connect(self.draw_count_line)
         button_layout.addWidget(self.draw_line_btn)
 
-        self.clear_line_btn = QPushButton("Clear Line")
+        self.clear_line_btn = QPushButton("Clear Selected Line")
         self.clear_line_btn.clicked.connect(self.clear_count_line)
         button_layout.addWidget(self.clear_line_btn)
 
-        self.direction_labels_btn = QPushButton("Name Directions")
+        self.direction_labels_btn = QPushButton("Rename Directions")
         self.direction_labels_btn.clicked.connect(self.set_direction_labels)
         button_layout.addWidget(self.direction_labels_btn)
 
-        self.detect_btn = QPushButton("Detect Vehicles")
+        self.detect_btn = QPushButton("Preview Detections")
         self.detect_btn.clicked.connect(self.detect_current_preview)
         button_layout.addWidget(self.detect_btn)
 
         self.start_counting_btn = QPushButton("Start Counting")
+        self.start_counting_btn.setProperty("role", "primaryButton")
         self.start_counting_btn.clicked.connect(self.start_counting)
         button_layout.addWidget(self.start_counting_btn)
 
         self.stop_counting_btn = QPushButton("Stop Counting")
+        self.stop_counting_btn.setProperty("role", "dangerButton")
         self.stop_counting_btn.clicked.connect(self.stop_counting)
         self.stop_counting_btn.setEnabled(False)
         button_layout.addWidget(self.stop_counting_btn)
@@ -268,10 +298,8 @@ class MainWindow(QMainWindow):
             move_handler=self.handle_preview_move,
             release_handler=self.handle_preview_release,
         )
+        self.preview_label.setObjectName("previewLabel")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview_label.setStyleSheet(
-            "border: 1px solid #444444; background-color: #d8d8d8;"
-        )
         self.preview_label.setMinimumHeight(300)
         self.preview_label.setScaledContents(False)
         self.preview_label.setText("Preview Area - Video will appear here")
@@ -283,26 +311,26 @@ class MainWindow(QMainWindow):
         preview_options_label.setProperty("role", "panelHint")
         preview_options_layout.addWidget(preview_options_label)
 
-        track_mode_label = QLabel("Tracks")
+        track_mode_label = QLabel("Track Labels")
         track_mode_label.setProperty("role", "panelHint")
         preview_options_layout.addWidget(track_mode_label)
 
         self.track_label_mode_combobox = QComboBox()
         self.track_label_mode_combobox.addItem("Off", TRACK_LABEL_MODE_OFF)
-        self.track_label_mode_combobox.addItem("Class Only", TRACK_LABEL_MODE_CLASS_ONLY)
+        self.track_label_mode_combobox.addItem("Class", TRACK_LABEL_MODE_CLASS_ONLY)
         self.track_label_mode_combobox.addItem("ID + Class", TRACK_LABEL_MODE_ID_CLASS)
-        self.track_label_mode_combobox.setCurrentIndex(1)
+        self.track_label_mode_combobox.setCurrentIndex(0)
         self.track_label_mode_combobox.currentIndexChanged.connect(
             self.handle_preview_overlay_option_changed
         )
         preview_options_layout.addWidget(self.track_label_mode_combobox)
 
-        self.show_line_labels_checkbox = QCheckBox("Line Tags")
+        self.show_line_labels_checkbox = QCheckBox("Line Labels")
         self.show_line_labels_checkbox.setChecked(True)
         self.show_line_labels_checkbox.toggled.connect(self.handle_preview_overlay_option_changed)
         preview_options_layout.addWidget(self.show_line_labels_checkbox)
 
-        self.show_direction_legend_checkbox = QCheckBox("Direction Legend")
+        self.show_direction_legend_checkbox = QCheckBox("A/B Legend")
         self.show_direction_legend_checkbox.setChecked(False)
         self.show_direction_legend_checkbox.toggled.connect(self.handle_preview_overlay_option_changed)
         preview_options_layout.addWidget(self.show_direction_legend_checkbox)
@@ -320,126 +348,30 @@ class MainWindow(QMainWindow):
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(6, 6, 6, 6)
-        right_layout.setSpacing(6)
+        right_layout.setSpacing(8)
         right_layout.addWidget(self.build_settings_group())
         right_layout.addWidget(self.build_all_lines_overview_group())
         right_layout.addWidget(self.build_active_line_details_group())
         right_layout.addWidget(self.build_overall_summary_group())
         right_layout.addWidget(self.build_run_settings_group())
 
-        event_log_group = QGroupBox("Event Log")
+        event_log_group = QGroupBox("Activity Log")
         event_log_layout = QVBoxLayout(event_log_group)
+        event_log_layout.setContentsMargins(8, 8, 8, 8)
+        event_log_layout.setSpacing(6)
+
+        event_log_hint = QLabel("Recent actions, warnings, and export results appear here.")
+        event_log_hint.setProperty("role", "panelHint")
+        event_log_layout.addWidget(event_log_hint)
 
         self.status_text = QTextEdit()
         self.status_text.setReadOnly(True)
         self.status_text.setPlainText(self.latest_status_message)
-        self.status_text.setMinimumHeight(96)
-        self.status_text.setMaximumHeight(120)
+        self.status_text.setMinimumHeight(84)
+        self.status_text.setMaximumHeight(110)
         event_log_layout.addWidget(self.status_text)
         right_layout.addWidget(event_log_group)
         right_layout.addStretch(1)
-
-        right_panel.setStyleSheet(
-            """
-            QGroupBox {
-                font-weight: 600;
-                margin-top: 8px;
-                padding-top: 6px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 8px;
-                padding: 0 4px 0 4px;
-            }
-            QFormLayout QLabel {
-                min-width: 86px;
-            }
-            QLabel[role="panelHint"] {
-                color: #5b5b5b;
-                font-size: 11px;
-            }
-            QLabel[role="summaryPrimaryLabel"] {
-                color: #555555;
-                font-size: 11px;
-                font-weight: 600;
-            }
-            QLabel[role="summaryPrimaryValue"] {
-                font-size: 30px;
-                font-weight: 700;
-                color: #111111;
-            }
-            QLabel[role="summaryStatusValue"] {
-                font-size: 15px;
-                font-weight: 700;
-                color: #0f4c81;
-                background: #eaf4ff;
-                border: 1px solid #bdd8f2;
-                border-radius: 8px;
-                padding: 5px 8px;
-            }
-            QLabel[role="summarySecondaryLabel"] {
-                color: #666666;
-                font-size: 11px;
-                font-weight: 600;
-            }
-            QLabel[role="summarySecondaryValue"] {
-                color: #222222;
-                font-size: 12px;
-            }
-            QLabel[role="metricValue"] {
-                font-weight: 600;
-                min-width: 28px;
-            }
-            QLabel[role="metricLabel"] {
-                color: #4a4a4a;
-            }
-            QLabel[role="tableHeader"] {
-                color: #5f6771;
-                font-size: 11px;
-                font-weight: 700;
-                background: #eef2f6;
-                border: 1px solid #d7dde5;
-                border-radius: 6px;
-                padding: 4px 6px;
-            }
-            QLabel[role="tableCell"] {
-                padding: 3px 6px;
-                border-radius: 5px;
-            }
-            QLabel[role="selectedCell"] {
-                padding: 3px 6px;
-                border-radius: 5px;
-                background: #e7f1ff;
-                color: #0f4c81;
-                font-weight: 700;
-            }
-            QLabel[role="detailMetaLabel"] {
-                color: #666666;
-                font-size: 11px;
-                font-weight: 600;
-            }
-            QLabel[role="detailMetaValue"] {
-                color: #1b1b1b;
-                font-size: 12px;
-                font-weight: 600;
-            }
-            QLabel[role="classChipLabel"] {
-                color: #5c6570;
-                font-size: 10px;
-                font-weight: 700;
-            }
-            QLabel[role="classChipValue"] {
-                color: #111111;
-                font-size: 18px;
-                font-weight: 700;
-            }
-            QFrame[role="classChip"] {
-                background: #f6f8fb;
-                border: 1px solid #d9e0e7;
-                border-radius: 8px;
-            }
-            """
-        )
 
         scroll_area.setWidget(right_panel)
         self.dashboard_widgets_ready = True
@@ -447,7 +379,7 @@ class MainWindow(QMainWindow):
         return scroll_area
 
     def build_settings_group(self):
-        settings_group = QGroupBox("Settings")
+        settings_group = QGroupBox("Run Setup")
         settings_group.setCheckable(True)
         settings_group.setChecked(True)
         settings_layout = QVBoxLayout(settings_group)
@@ -461,6 +393,18 @@ class MainWindow(QMainWindow):
         form_layout.setVerticalSpacing(3)
         form_layout.setHorizontalSpacing(8)
         settings_layout.addWidget(self.settings_content)
+
+        self.counting_mode_combobox = QComboBox()
+        self.counting_mode_combobox.addItem(
+            COUNTING_MODE_LABELS[config.COUNTING_MODE_VEHICLE],
+            config.COUNTING_MODE_VEHICLE,
+        )
+        self.counting_mode_combobox.addItem(
+            COUNTING_MODE_LABELS[config.COUNTING_MODE_PEOPLE],
+            config.COUNTING_MODE_PEOPLE,
+        )
+        self.counting_mode_combobox.currentIndexChanged.connect(self.handle_counting_mode_changed)
+        form_layout.addRow("Counting Mode", self.counting_mode_combobox)
 
         self.preset_combobox = QComboBox()
         self.preset_combobox.addItem("Custom", config.PRESET_CUSTOM)
@@ -541,40 +485,54 @@ class MainWindow(QMainWindow):
         class_filter_layout.setHorizontalSpacing(10)
         class_filter_layout.setVerticalSpacing(2)
         self.class_checkboxes = {}
-        for index, class_name in enumerate(config.DEFAULT_ENABLED_CLASSES):
-            checkbox = QCheckBox(class_name.title())
+        for index, class_name in enumerate(config.SUPPORTED_COUNT_CLASSES):
+            checkbox = QCheckBox(self.get_class_display_label(class_name))
             checkbox.setChecked(True)
             self.class_checkboxes[class_name] = checkbox
             class_filter_layout.addWidget(checkbox, index // 2, index % 2)
         form_layout.addRow("Classes", class_filter_widget)
+
+        self.class_filter_hint = QLabel("")
+        self.class_filter_hint.setProperty("role", "panelHint")
+        self.class_filter_hint.setWordWrap(True)
+        form_layout.addRow("", self.class_filter_hint)
 
         self.active_preset_label = QLabel("Active preset: Custom")
         self.active_preset_label.setProperty("role", "panelHint")
         form_layout.addRow("", self.active_preset_label)
 
         self.connect_manual_setting_change_handlers()
+        self.set_counting_mode_combobox_value(config.DEFAULT_COUNTING_MODE)
+        self.apply_counting_mode_defaults(force=True)
         self.set_preset_combobox_value(config.DEFAULT_PRESET)
         self.handle_preset_changed()
 
         return settings_group
 
     def build_all_lines_overview_group(self):
-        overview_group = QGroupBox("All Lines Overview")
+        overview_group = QGroupBox("Dashboard")
         overview_layout = QVBoxLayout(overview_group)
         overview_layout.setContentsMargins(8, 8, 8, 8)
-        overview_layout.setSpacing(6)
+        overview_layout.setSpacing(8)
         self.summary_value_labels = {}
         self.line_overview_widgets = {}
 
+        summary_hint = QLabel(
+            "Keep this section visible during counting. It is the fastest read of source, status, totals, and line activity."
+        )
+        summary_hint.setProperty("role", "panelHint")
+        summary_hint.setWordWrap(True)
+        overview_layout.addWidget(summary_hint)
+
         summary_grid = QGridLayout()
         summary_grid.setHorizontalSpacing(8)
-        summary_grid.setVerticalSpacing(3)
+        summary_grid.setVerticalSpacing(4)
 
-        total_label = QLabel("Total Crossings")
+        total_label = QLabel("Total Count")
         total_label.setProperty("role", "summaryPrimaryLabel")
         total_value = QLabel("0")
         total_value.setProperty("role", "summaryPrimaryValue")
-        status_label = QLabel("Current Status")
+        status_label = QLabel("Run Status")
         status_label.setProperty("role", "summaryPrimaryLabel")
         status_value = QLabel("Waiting")
         status_value.setProperty("role", "summaryStatusValue")
@@ -583,7 +541,7 @@ class MainWindow(QMainWindow):
         source_value = QLabel("-")
         source_value.setWordWrap(True)
         source_value.setProperty("role", "summarySecondaryValue")
-        frames_label = QLabel("Processed Frames")
+        frames_label = QLabel("Frames")
         frames_label.setProperty("role", "summarySecondaryLabel")
         frames_value = QLabel("0")
         frames_value.setProperty("role", "summarySecondaryValue")
@@ -615,14 +573,9 @@ class MainWindow(QMainWindow):
         class_chip_grid.setHorizontalSpacing(6)
         class_chip_grid.setVerticalSpacing(6)
         self.overall_class_chip_labels = {}
-        class_chip_order = ("total",) + config.DEFAULT_ENABLED_CLASSES
+        class_chip_order = ("total",) + config.SUPPORTED_COUNT_CLASSES
         class_chip_titles = {
             "total": "Total",
-            "car": "Car",
-            "motorcycle": "Motorcycle",
-            "bus": "Bus",
-            "truck": "Truck",
-            "bicycle": "Bicycle",
         }
         for index, metric_key in enumerate(class_chip_order):
             chip = QFrame()
@@ -630,7 +583,7 @@ class MainWindow(QMainWindow):
             chip_layout = QVBoxLayout(chip)
             chip_layout.setContentsMargins(8, 6, 8, 6)
             chip_layout.setSpacing(1)
-            title = QLabel(class_chip_titles[metric_key])
+            title = QLabel(class_chip_titles.get(metric_key, self.get_class_display_label(metric_key)))
             title.setProperty("role", "classChipLabel")
             value = QLabel("0")
             value.setProperty("role", "classChipValue")
@@ -638,13 +591,18 @@ class MainWindow(QMainWindow):
             chip_layout.addWidget(value)
             class_chip_grid.addWidget(chip, index // 3, index % 3)
             self.overall_class_chip_labels[metric_key] = value
+            self.overall_class_chip_widgets[metric_key] = chip
 
         overview_layout.addLayout(class_chip_grid)
+
+        lines_caption = QLabel("All lines")
+        lines_caption.setProperty("role", "sectionCaption")
+        overview_layout.addWidget(lines_caption)
 
         overview_grid = QGridLayout()
         overview_grid.setHorizontalSpacing(6)
         overview_grid.setVerticalSpacing(4)
-        overview_headers = ("Line", "Name", "Total", "A", "B")
+        overview_headers = ("Line", "Directions", "Total", "A -> B", "B -> A")
         for column, header_text in enumerate(overview_headers):
             header = QLabel(header_text)
             header.setProperty("role", "tableHeader")
@@ -682,22 +640,34 @@ class MainWindow(QMainWindow):
 
         overview_layout.addLayout(overview_grid)
 
+        class_caption = QLabel("By class")
+        class_caption.setProperty("role", "sectionCaption")
+        overview_layout.addWidget(class_caption)
+
         class_overview_grid = QGridLayout()
         class_overview_grid.setHorizontalSpacing(4)
         class_overview_grid.setVerticalSpacing(4)
-        class_overview_headers = ("Line", "Total", "Car", "Moto", "Bus", "Truck", "Bike")
-        for column, header_text in enumerate(class_overview_headers):
+        class_overview_headers = ("line", "total", *config.SUPPORTED_COUNT_CLASSES)
+        for column, metric_key in enumerate(class_overview_headers):
+            header_text = (
+                "Line"
+                if metric_key == "line"
+                else "Total"
+                if metric_key == "total"
+                else self.get_class_short_label(metric_key)
+            )
             header = QLabel(header_text)
             header.setProperty("role", "tableHeader")
             alignment = Qt.AlignmentFlag.AlignLeft if column == 0 else Qt.AlignmentFlag.AlignRight
             header.setAlignment(alignment | Qt.AlignmentFlag.AlignVCenter)
             class_overview_grid.addWidget(header, 0, column)
+            self.line_class_header_widgets[metric_key] = header
 
         self.line_class_overview_widgets = {}
         for row, line_key in enumerate(DEFAULT_LINE_KEYS, start=1):
             widgets = {}
             for column, metric_key in enumerate(
-                ("line", "total", "car", "motorcycle", "bus", "truck", "bicycle")
+                ("line", "total", *config.SUPPORTED_COUNT_CLASSES)
             ):
                 label = QLabel(LINE_SHORT_NAMES[line_key] if metric_key == "line" else "0")
                 label.setProperty("role", "tableCell")
@@ -717,17 +687,18 @@ class MainWindow(QMainWindow):
         return overview_group
 
     def build_active_line_details_group(self):
-        directions_group = QGroupBox("Active Line Details")
+        directions_group = QGroupBox("Selected Line")
         directions_layout = QVBoxLayout(directions_group)
         directions_layout.setContentsMargins(8, 8, 8, 8)
-        directions_layout.setSpacing(6)
+        directions_layout.setSpacing(8)
 
         detail_meta_grid = QGridLayout()
         detail_meta_grid.setHorizontalSpacing(10)
-        detail_meta_grid.setVerticalSpacing(3)
+        detail_meta_grid.setVerticalSpacing(4)
         self.active_line_detail_labels = {}
         for row, (key, label_text) in enumerate((
             ("selected_line", "Selected Line"),
+            ("line_total", "Line Total"),
             ("direction_a_label", "A -> B"),
             ("direction_b_label", "B -> A"),
         )):
@@ -740,8 +711,11 @@ class MainWindow(QMainWindow):
             self.active_line_detail_labels[key] = value
         directions_layout.addLayout(detail_meta_grid)
 
-        detail_hint = QLabel("Preview markers show which side is A and which side is B for the selected line.")
+        detail_hint = QLabel(
+            "A and B stay fixed for each line. Custom direction names are user-facing labels layered on top."
+        )
         detail_hint.setProperty("role", "panelHint")
+        detail_hint.setWordWrap(True)
         directions_layout.addWidget(detail_hint)
 
         directions_grid = QGridLayout()
@@ -759,6 +733,7 @@ class MainWindow(QMainWindow):
             section_layout.setVerticalSpacing(2)
             section_layout.setHorizontalSpacing(8)
             value_labels = {}
+            row_widgets = {}
             for row, (metric_key, metric_label) in enumerate(self.get_dashboard_metric_labels()):
                 metric_widget = QLabel(metric_label)
                 metric_widget.setProperty("role", "metricLabel")
@@ -768,10 +743,12 @@ class MainWindow(QMainWindow):
                 section_layout.addWidget(metric_widget, row, 0)
                 section_layout.addWidget(value_label, row, 1)
                 value_labels[metric_key] = value_label
+                row_widgets[metric_key] = (metric_widget, value_label)
             directions_grid.addWidget(section_group, 0, column)
             self.direction_section_widgets[direction_key] = {
                 "group": section_group,
                 "labels": value_labels,
+                "rows": row_widgets,
             }
 
         directions_layout.addLayout(directions_grid)
@@ -784,8 +761,9 @@ class MainWindow(QMainWindow):
         overall_layout.setVerticalSpacing(2)
         overall_layout.setHorizontalSpacing(10)
         self.overall_count_labels = {}
-        for index, class_name in enumerate(config.DEFAULT_ENABLED_CLASSES):
-            label = QLabel(class_name.title())
+        self.overall_count_widgets = {}
+        for index, class_name in enumerate(config.SUPPORTED_COUNT_CLASSES):
+            label = QLabel(self.get_class_display_label(class_name))
             label.setProperty("role", "metricLabel")
             value_label = QLabel("0")
             value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -795,10 +773,11 @@ class MainWindow(QMainWindow):
             overall_layout.addWidget(label, row, column)
             overall_layout.addWidget(value_label, row, column + 1)
             self.overall_count_labels[class_name] = value_label
+            self.overall_count_widgets[class_name] = {"label": label, "value": value_label}
         return overall_group
 
     def build_run_settings_group(self):
-        run_settings_group = QGroupBox("Run Settings")
+        run_settings_group = QGroupBox("Run Snapshot")
         run_settings_layout = QGridLayout(run_settings_group)
         run_settings_layout.setContentsMargins(8, 8, 8, 8)
         run_settings_layout.setVerticalSpacing(2)
@@ -806,6 +785,7 @@ class MainWindow(QMainWindow):
         self.run_settings_value_labels = {}
 
         for row, (key, label_text) in enumerate((
+            ("counting_mode", "Mode"),
             ("preset_name", "Preset"),
             ("model_size", "Model"),
             ("confidence_threshold", "Confidence"),
@@ -824,15 +804,15 @@ class MainWindow(QMainWindow):
         return run_settings_group
 
     def build_source_group(self):
-        source_group = QGroupBox("Video Source")
+        source_group = QGroupBox("Source")
         source_layout = QFormLayout(source_group)
 
         self.source_type_combobox = QComboBox()
-        self.source_type_combobox.addItem("Local Video File", SOURCE_KIND_LOCAL_FILE)
-        self.source_type_combobox.addItem("YouTube URL", SOURCE_KIND_YOUTUBE_URL)
-        self.source_type_combobox.addItem("Direct Camera Stream URL", SOURCE_KIND_DIRECT_STREAM)
+        self.source_type_combobox.addItem("Local File", SOURCE_KIND_LOCAL_FILE)
+        self.source_type_combobox.addItem("YouTube", SOURCE_KIND_YOUTUBE_URL)
+        self.source_type_combobox.addItem("Traffic Camera / Stream", SOURCE_KIND_DIRECT_STREAM)
         self.source_type_combobox.currentIndexChanged.connect(self.handle_source_type_changed)
-        source_layout.addRow("Source Type", self.source_type_combobox)
+        source_layout.addRow("Type", self.source_type_combobox)
 
         self.source_input_stack = QStackedWidget()
         self.source_input_stack.addWidget(self.build_local_source_widget())
@@ -840,7 +820,8 @@ class MainWindow(QMainWindow):
         self.source_input_stack.addWidget(self.build_direct_stream_widget())
         source_layout.addRow("Source", self.source_input_stack)
 
-        self.load_source_btn = QPushButton("Load Source Preview")
+        self.load_source_btn = QPushButton("Load Preview")
+        self.load_source_btn.setProperty("role", "primaryButton")
         self.load_source_btn.clicked.connect(self.load_selected_source)
         source_layout.addRow("", self.load_source_btn)
 
@@ -961,12 +942,12 @@ class MainWindow(QMainWindow):
         self.refresh_dashboard()
         if self.source_type_combobox.currentData() == SOURCE_KIND_YOUTUBE_URL:
             self.set_status(
-                "Status: Paste a YouTube watch or live URL, then click Load Source Preview.\n"
+                "Status: Paste a YouTube watch or live URL, then click Load Preview.\n"
                 "Tip: Low latency is recommended by default for live-like sources, but you can switch it off."
             )
         elif self.source_type_combobox.currentData() == SOURCE_KIND_DIRECT_STREAM:
             self.set_status(
-                "Status: Paste an MJPEG, HLS (.m3u8), or RTSP camera stream URL, then click Load Source Preview.\n"
+                "Status: Paste an MJPEG, HLS (.m3u8), or RTSP camera stream URL, then click Load Preview.\n"
                 "Tip: Low latency is recommended by default for live-like sources, but you can switch it off."
             )
         else:
@@ -1063,14 +1044,15 @@ class MainWindow(QMainWindow):
         self.apply_preset_settings(preset_key, preset_settings)
 
     def handle_manual_setting_changed(self):
-        if self.applying_preset:
+        if self.applying_preset or self.applying_counting_mode:
             return
         self.set_preset_combobox_value(config.PRESET_CUSTOM)
         self.set_active_preset_name("Custom")
         self.refresh_dashboard()
+        self.sync_dashboard_class_visibility()
 
     def handle_low_latency_changed(self):
-        if self.applying_preset:
+        if self.applying_preset or self.applying_counting_mode:
             return
         self.low_latency_manually_overridden = True
         self.handle_manual_setting_changed()
@@ -1084,7 +1066,11 @@ class MainWindow(QMainWindow):
             self.low_latency_live_checkbox.setChecked(
                 preset_settings["prioritize_low_latency_live_streams"]
             )
-            enabled_classes = set(preset_settings["enabled_classes"])
+            enabled_classes = set(
+                config.get_default_enabled_classes_for_mode(self.counting_mode)
+                if self.counting_mode == config.COUNTING_MODE_PEOPLE
+                else preset_settings["enabled_classes"]
+            )
             for class_name, checkbox in self.class_checkboxes.items():
                 checkbox.setChecked(class_name in enabled_classes)
             track_label_mode = preset_settings.get("track_label_mode")
@@ -1129,14 +1115,14 @@ class MainWindow(QMainWindow):
                 "confidence_threshold": config.DEFAULT_CONFIDENCE_THRESHOLD,
                 "frame_skip": 1,
                 "model_size": "small",
-                "enabled_classes": list(config.DEFAULT_ENABLED_CLASSES),
+                "enabled_classes": list(config.VEHICLE_ENABLED_CLASSES),
                 "prioritize_low_latency_live_streams": False,
             },
             config.PRESET_MOTORCYCLE_FOCUS: {
                 "confidence_threshold": 0.20,
                 "frame_skip": 1,
                 "model_size": "medium",
-                "enabled_classes": ["car", "motorcycle", "bus", "truck", "bicycle"],
+                "enabled_classes": list(config.VEHICLE_ENABLED_CLASSES),
                 "prioritize_low_latency_live_streams": False,
                 "track_label_mode": TRACK_LABEL_MODE_ID_CLASS,
             },
@@ -1174,7 +1160,9 @@ class MainWindow(QMainWindow):
             self.set_status("Status: Load a video source first before running detection.")
             return
 
-        self.set_status("Status: Running vehicle detection on the current preview...")
+        self.set_status(
+            f"Status: Running {self.get_count_target_plural().lower()} detection on the current preview..."
+        )
         settings = self.get_active_settings()
         if not settings:
             return
@@ -1197,7 +1185,7 @@ class MainWindow(QMainWindow):
     def start_counting(self):
         if not self.selected_source or self.preview_frame is None:
             self.set_status(
-                "Status: Load a source preview first.\nNext step: choose a source and click Load Source Preview."
+                "Status: Load a source preview first.\nNext step: choose a source and click Load Preview."
             )
             return
 
@@ -1218,7 +1206,10 @@ class MainWindow(QMainWindow):
 
         self.count_settings = settings
         self.refresh_dashboard(status_override="Starting")
-        status_message = "Status: Processing started.\nReading video and tracking vehicles..."
+        status_message = (
+            "Status: Processing started.\n"
+            f"Reading video and tracking {self.get_count_target_plural().lower()}..."
+        )
         if annotated_video_options.get("enabled"):
             status_message += (
                 f"\nAnnotated video saving started: "
@@ -1370,11 +1361,13 @@ class MainWindow(QMainWindow):
                 line_color=LINE_COLORS[line_key],
                 line_label=LINE_SHORT_NAMES[line_key],
                 is_selected=(line_key == self.active_line_key),
+                show_direction_markers=(line_key == self.active_line_key),
                 show_direction_legend=(
                     line_key == self.active_line_key
                     and self.show_direction_legend_checkbox.isChecked()
                 ),
                 show_line_label=self.show_line_labels_checkbox.isChecked(),
+                show_handles=(line_key == self.active_line_key and not self.is_counting),
                 active_handle=self.get_active_line_handle() if line_key == self.active_line_key else None,
             )
         if self.pending_line_start is not None:
@@ -1385,6 +1378,7 @@ class MainWindow(QMainWindow):
                 line_color=LINE_COLORS[self.active_line_key],
                 line_label=LINE_SHORT_NAMES[self.active_line_key],
                 is_selected=True,
+                show_direction_markers=True,
                 show_line_label=self.show_line_labels_checkbox.isChecked(),
                 show_handles=True,
             )
@@ -1505,6 +1499,7 @@ class MainWindow(QMainWindow):
     def handle_draw_mode_press(self, image_point):
         if self.pending_line_start is None:
             self.pending_line_start = image_point
+            self.refresh_line_action_button_text()
             self.update_preview()
             self.set_status(
                 "Status: First point selected.\nClick the preview again to finish the count line."
@@ -1571,6 +1566,7 @@ class MainWindow(QMainWindow):
         self.preview_label.unsetCursor()
         if clear_saved_line:
             self.count_lines[self.active_line_key] = None
+        self.refresh_line_action_button_text()
 
     def build_default_direction_labels_by_line(self):
         return {
@@ -1595,8 +1591,13 @@ class MainWindow(QMainWindow):
         return any(line_points is not None for line_points in self.count_lines.values())
 
     def refresh_line_action_button_text(self):
-        self.draw_line_btn.setText("Place / Edit Line")
-        self.clear_line_btn.setText("Clear Line")
+        if self.pending_line_start is not None:
+            self.draw_line_btn.setText("Finish Line")
+        elif self.get_active_line_points() is None:
+            self.draw_line_btn.setText("Place Line")
+        else:
+            self.draw_line_btn.setText("Adjust Line")
+        self.clear_line_btn.setText("Clear Selected Line")
 
     def get_next_step_hint(self):
         if any(self.count_lines.get(line_key) is None for line_key in DEFAULT_LINE_KEYS):
@@ -1792,15 +1793,16 @@ class MainWindow(QMainWindow):
 
         if counts_by_class:
             counts_text = ", ".join(
-                f"{class_name}: {count}"
-                for class_name, count in sorted(counts_by_class.items())
+                f"{self.get_class_display_label(class_name)}: {counts_by_class.get(class_name, 0)}"
+                for class_name in config.SUPPORTED_COUNT_CLASSES
+                if counts_by_class.get(class_name, 0) > 0
             )
         else:
             counts_text = "None"
 
         return (
             "Status: Detection completed.\n"
-            f"Total detected objects: {total_detected}\n"
+            f"Total detected {self.get_count_target_plural().lower()}: {total_detected}\n"
             f"Counts by class: {counts_text}"
         )
 
@@ -1897,6 +1899,7 @@ class MainWindow(QMainWindow):
         self.show_line_labels_checkbox.setEnabled(not self.is_counting)
         self.show_direction_legend_checkbox.setEnabled(not self.is_counting)
         self.preset_combobox.setEnabled(not self.is_counting)
+        self.counting_mode_combobox.setEnabled(not self.is_counting)
         self.confidence_spinbox.setEnabled(not self.is_counting)
         self.frame_skip_spinbox.setEnabled(not self.is_counting)
         self.model_size_combobox.setEnabled(not self.is_counting)
@@ -1992,9 +1995,9 @@ class MainWindow(QMainWindow):
         parts = []
         for direction_key, direction_label in direction_labels.items():
             counts_text = ", ".join(
-                f"{class_name}: {count}"
-                for class_name, count in direction_counts.get(direction_key, {}).items()
-                if count > 0
+                f"{self.get_class_display_label(class_name)}: {direction_counts.get(direction_key, {}).get(class_name, 0)}"
+                for class_name in config.SUPPORTED_COUNT_CLASSES
+                if direction_counts.get(direction_key, {}).get(class_name, 0) > 0
             )
             if not counts_text:
                 counts_text = "None"
@@ -2003,20 +2006,16 @@ class MainWindow(QMainWindow):
         return "; ".join(parts)
 
     def get_dashboard_metric_labels(self):
-        return (
-            ("total", "Total"),
-            ("car", "Car"),
-            ("motorcycle", "Motorcycle"),
-            ("bus", "Bus"),
-            ("truck", "Truck"),
-            ("bicycle", "Bicycle"),
+        return (("total", "Total"),) + tuple(
+            (class_name, self.get_class_display_label(class_name))
+            for class_name in config.SUPPORTED_COUNT_CLASSES
         )
 
     def format_counts_by_class(self, counts):
         counts_text = ", ".join(
-            f"{class_name}: {count}"
-            for class_name, count in counts.items()
-            if count > 0
+            f"{self.get_class_display_label(class_name)}: {counts.get(class_name, 0)}"
+            for class_name in config.SUPPORTED_COUNT_CLASSES
+            if counts.get(class_name, 0) > 0
         )
         if not counts_text:
             return "None"
@@ -2080,6 +2079,7 @@ class MainWindow(QMainWindow):
 
         self.summary_value_labels["source"].setText(source_text)
         self.summary_value_labels["status"].setText(current_status)
+        self.apply_status_badge_style(current_status)
         self.summary_value_labels["processed_frames"].setText(
             str(dashboard_results.get("processed_frames", 0))
         )
@@ -2088,7 +2088,7 @@ class MainWindow(QMainWindow):
         )
         self.overall_class_chip_labels["total"].setText(str(dashboard_results.get("total", 0)))
         overall_counts = dashboard_results.get("counts", {})
-        for class_name in config.DEFAULT_ENABLED_CLASSES:
+        for class_name in config.SUPPORTED_COUNT_CLASSES:
             self.overall_class_chip_labels[class_name].setText(
                 str(overall_counts.get(class_name, 0))
             )
@@ -2100,6 +2100,7 @@ class MainWindow(QMainWindow):
         active_direction_counts = active_line_result.get("direction_counts", {})
         active_direction_labels = self.direction_labels_by_line[self.active_line_key]
         self.active_line_detail_labels["selected_line"].setText(self.get_active_line_name())
+        self.active_line_detail_labels["line_total"].setText(str(active_line_result.get("total", 0)))
         self.active_line_detail_labels["direction_a_label"].setText(
             active_direction_labels[DIRECTION_NEGATIVE_TO_POSITIVE]
         )
@@ -2110,9 +2111,9 @@ class MainWindow(QMainWindow):
             section["group"].setTitle(self.get_direction_panel_title(direction_key, self.active_line_key))
             section_counts = active_direction_counts.get(direction_key, {})
             section["labels"]["total"].setText(
-                str(sum(section_counts.get(class_name, 0) for class_name in config.DEFAULT_ENABLED_CLASSES))
+                str(sum(section_counts.get(class_name, 0) for class_name in config.SUPPORTED_COUNT_CLASSES))
             )
-            for class_name in config.DEFAULT_ENABLED_CLASSES:
+            for class_name in config.SUPPORTED_COUNT_CLASSES:
                 section["labels"][class_name].setText(str(section_counts.get(class_name, 0)))
 
         for line_key, widgets in self.line_overview_widgets.items():
@@ -2146,15 +2147,22 @@ class MainWindow(QMainWindow):
             self.line_class_overview_widgets[line_key]["total"].setText(
                 str(line_result.get("total", 0))
             )
-            for class_name in config.DEFAULT_ENABLED_CLASSES:
+            for class_name in config.SUPPORTED_COUNT_CLASSES:
                 self.line_class_overview_widgets[line_key][class_name].setText(
                     str(line_result.get("counts", {}).get(class_name, 0))
                 )
 
         for class_name, value_label in self.overall_count_labels.items():
             value_label.setText(str(overall_counts.get(class_name, 0)))
+        self.sync_dashboard_class_visibility()
 
         active_settings = self.count_settings or self.get_dashboard_settings_snapshot()
+        self.run_settings_value_labels["counting_mode"].setText(
+            COUNTING_MODE_LABELS.get(
+                active_settings.get("counting_mode", self.counting_mode),
+                self.get_counting_mode_label(),
+            )
+        )
         self.run_settings_value_labels["preset_name"].setText(
             str(active_settings.get("preset_name", self.active_preset_name))
         )
@@ -2182,13 +2190,13 @@ class MainWindow(QMainWindow):
     def build_empty_dashboard_results(self):
         return {
             "total": 0,
-            "counts": {class_name: 0 for class_name in config.DEFAULT_ENABLED_CLASSES},
+            "counts": {class_name: 0 for class_name in config.SUPPORTED_COUNT_CLASSES},
             "direction_counts": {
                 DIRECTION_NEGATIVE_TO_POSITIVE: {
-                    class_name: 0 for class_name in config.DEFAULT_ENABLED_CLASSES
+                    class_name: 0 for class_name in config.SUPPORTED_COUNT_CLASSES
                 },
                 DIRECTION_POSITIVE_TO_NEGATIVE: {
-                    class_name: 0 for class_name in config.DEFAULT_ENABLED_CLASSES
+                    class_name: 0 for class_name in config.SUPPORTED_COUNT_CLASSES
                 },
             },
             "line_results": {
@@ -2202,13 +2210,13 @@ class MainWindow(QMainWindow):
         return {
             "line_key": line_key,
             "total": 0,
-            "counts": {class_name: 0 for class_name in config.DEFAULT_ENABLED_CLASSES},
+            "counts": {class_name: 0 for class_name in config.SUPPORTED_COUNT_CLASSES},
             "direction_counts": {
                 DIRECTION_NEGATIVE_TO_POSITIVE: {
-                    class_name: 0 for class_name in config.DEFAULT_ENABLED_CLASSES
+                    class_name: 0 for class_name in config.SUPPORTED_COUNT_CLASSES
                 },
                 DIRECTION_POSITIVE_TO_NEGATIVE: {
-                    class_name: 0 for class_name in config.DEFAULT_ENABLED_CLASSES
+                    class_name: 0 for class_name in config.SUPPORTED_COUNT_CLASSES
                 },
             },
         }
@@ -2224,6 +2232,7 @@ class MainWindow(QMainWindow):
 
     def get_dashboard_settings_snapshot(self):
         return {
+            "counting_mode": self.counting_mode,
             "preset_name": self.active_preset_name,
             "model_size": self.get_model_size_key(),
             "model_size_label": self.get_model_display_label(),
@@ -2232,6 +2241,183 @@ class MainWindow(QMainWindow):
             "prioritize_low_latency_live_streams": self.low_latency_live_checkbox.isChecked(),
             "annotated_video_enabled": self.save_annotated_video_checkbox.isChecked(),
         }
+
+    def build_app_stylesheet(self):
+        return """
+        QWidget {
+            color: #1b1f24;
+        }
+        QGroupBox {
+            font-weight: 600;
+            margin-top: 8px;
+            padding-top: 8px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 8px;
+            padding: 0 4px 0 4px;
+        }
+        QFormLayout QLabel {
+            min-width: 86px;
+        }
+        QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit {
+            border: 1px solid #c9d3de;
+            border-radius: 6px;
+            padding: 4px 6px;
+            background: #ffffff;
+        }
+        QPushButton {
+            border: 1px solid #c4cfdb;
+            border-radius: 7px;
+            padding: 6px 10px;
+            background: #f6f8fb;
+        }
+        QPushButton:hover {
+            background: #edf3f8;
+        }
+        QPushButton[role="primaryButton"] {
+            background: #0f4c81;
+            color: #ffffff;
+            border-color: #0f4c81;
+            font-weight: 700;
+        }
+        QPushButton[role="primaryButton"]:hover {
+            background: #135c9d;
+        }
+        QPushButton[role="dangerButton"] {
+            background: #fff1ef;
+            color: #9f2d20;
+            border-color: #f0b3aa;
+            font-weight: 600;
+        }
+        QPushButton[role="dangerButton"]:hover {
+            background: #ffe5e1;
+        }
+        #previewLabel {
+            border: 1px solid #4d5a66;
+            border-radius: 8px;
+            background-color: #dbe3ea;
+            color: #495866;
+        }
+        QLabel[role="panelHint"] {
+            color: #5b6672;
+            font-size: 11px;
+        }
+        QLabel[role="sectionCaption"] {
+            color: #4c5a67;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        QLabel[role="summaryPrimaryLabel"] {
+            color: #55616d;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        QLabel[role="summaryPrimaryValue"] {
+            font-size: 32px;
+            font-weight: 800;
+            color: #111111;
+        }
+        QLabel[role="summaryStatusValue"] {
+            font-size: 15px;
+            font-weight: 700;
+            border-radius: 8px;
+            padding: 5px 8px;
+        }
+        QLabel[role="summaryStatusValue"][statusState="waiting"] {
+            color: #495866;
+            background: #eef2f6;
+            border: 1px solid #d7dde5;
+        }
+        QLabel[role="summaryStatusValue"][statusState="processing"],
+        QLabel[role="summaryStatusValue"][statusState="setup"] {
+            color: #0f4c81;
+            background: #eaf4ff;
+            border: 1px solid #bdd8f2;
+        }
+        QLabel[role="summaryStatusValue"][statusState="ready"] {
+            color: #1e6b37;
+            background: #eaf8ef;
+            border: 1px solid #b9e1c4;
+        }
+        QLabel[role="summarySecondaryLabel"] {
+            color: #66717c;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        QLabel[role="summarySecondaryValue"] {
+            color: #222222;
+            font-size: 12px;
+        }
+        QLabel[role="metricValue"] {
+            font-weight: 700;
+            min-width: 28px;
+        }
+        QLabel[role="metricLabel"] {
+            color: #4c5864;
+        }
+        QLabel[role="tableHeader"] {
+            color: #5f6771;
+            font-size: 11px;
+            font-weight: 700;
+            background: #eef2f6;
+            border: 1px solid #d7dde5;
+            border-radius: 6px;
+            padding: 4px 6px;
+        }
+        QLabel[role="tableCell"] {
+            padding: 4px 6px;
+            border-radius: 5px;
+        }
+        QLabel[role="selectedCell"] {
+            padding: 4px 6px;
+            border-radius: 5px;
+            background: #e7f1ff;
+            color: #0f4c81;
+            font-weight: 700;
+        }
+        QLabel[role="detailMetaLabel"] {
+            color: #666666;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        QLabel[role="detailMetaValue"] {
+            color: #1b1b1b;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        QLabel[role="classChipLabel"] {
+            color: #5c6570;
+            font-size: 10px;
+            font-weight: 700;
+        }
+        QLabel[role="classChipValue"] {
+            color: #111111;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        QFrame[role="classChip"] {
+            background: #f6f8fb;
+            border: 1px solid #d9e0e7;
+            border-radius: 8px;
+        }
+        """
+
+    def apply_status_badge_style(self, status_text):
+        if status_text == "Ready":
+            state = "ready"
+        elif status_text in {"Processing", "Starting", "Preview loaded"}:
+            state = "setup" if status_text == "Preview loaded" else "processing"
+        else:
+            state = "waiting"
+
+        status_widget = self.summary_value_labels.get("status")
+        if status_widget is None:
+            return
+        status_widget.setProperty("statusState", state)
+        status_widget.style().unpolish(status_widget)
+        status_widget.style().polish(status_widget)
+        status_widget.update()
 
     def default_direction_labels(self):
         return {
@@ -2277,6 +2463,7 @@ class MainWindow(QMainWindow):
         return (
             f"Selected source: {source.display_name}\n"
             f"Source type: {source_kind_label}\n"
+            f"Counting mode: {self.get_counting_mode_label()}\n"
             f"Active preset: {self.active_preset_name}\n"
             f"Model: {self.get_model_display_label()}\n"
             f"{live_mode_text}"
@@ -2340,6 +2527,7 @@ class MainWindow(QMainWindow):
                 "motorcycle_tracking": self.active_preset_name == "Motorcycle Focus",
             }
         )
+        settings["counting_mode"] = self.counting_mode
         settings["preset_name"] = self.active_preset_name
         settings["model_size_label"] = self.get_model_display_label()
         settings["annotated_video_enabled"] = self.save_annotated_video_checkbox.isChecked()
@@ -2378,3 +2566,103 @@ class MainWindow(QMainWindow):
         if settings is not None:
             return settings
         return self.build_settings_payload(list(self.class_checkboxes.keys()))
+
+    def set_counting_mode_combobox_value(self, counting_mode):
+        index = self.counting_mode_combobox.findData(counting_mode)
+        if index >= 0 and self.counting_mode_combobox.currentIndex() != index:
+            self.counting_mode_combobox.setCurrentIndex(index)
+
+    def get_counting_mode_label(self):
+        return COUNTING_MODE_LABELS.get(self.counting_mode, "Counting")
+
+    def get_count_target_singular(self):
+        return "person" if self.counting_mode == config.COUNTING_MODE_PEOPLE else "vehicle"
+
+    def get_count_target_plural(self):
+        return "people" if self.counting_mode == config.COUNTING_MODE_PEOPLE else "vehicles"
+
+    def get_class_display_label(self, class_name):
+        return CLASS_DISPLAY_LABELS.get(class_name, class_name.title())
+
+    def get_class_short_label(self, class_name):
+        return CLASS_SHORT_LABELS.get(class_name, self.get_class_display_label(class_name))
+
+    def get_effective_enabled_classes(self):
+        if self.class_checkboxes:
+            enabled_classes = [
+                class_name
+                for class_name, checkbox in self.class_checkboxes.items()
+                if checkbox.isChecked()
+            ]
+            if enabled_classes:
+                return enabled_classes
+        return config.get_default_enabled_classes_for_mode(self.counting_mode)
+
+    def update_class_filter_hint(self):
+        if self.class_filter_hint is None:
+            return
+        default_classes = ", ".join(
+            self.get_class_display_label(class_name)
+            for class_name in config.get_default_enabled_classes_for_mode(self.counting_mode)
+        )
+        self.class_filter_hint.setText(
+            f"{self.get_counting_mode_label()} starts with {default_classes}. For motorcycle-heavy scenes, use Motorcycle Focus with Frame Skip 1."
+        )
+
+    def apply_counting_mode_defaults(self, force=False):
+        default_classes = set(config.get_default_enabled_classes_for_mode(self.counting_mode))
+        self.applying_counting_mode = True
+        try:
+            for class_name, checkbox in self.class_checkboxes.items():
+                checkbox.setChecked(class_name in default_classes)
+        finally:
+            self.applying_counting_mode = False
+        self.update_class_filter_hint()
+        if force:
+            self.refresh_dashboard()
+        self.sync_dashboard_class_visibility()
+
+    def handle_counting_mode_changed(self):
+        selected_mode = self.counting_mode_combobox.currentData()
+        if not selected_mode:
+            return
+        self.counting_mode = selected_mode
+        self.set_preset_combobox_value(config.PRESET_CUSTOM)
+        self.set_active_preset_name("Custom")
+        self.apply_counting_mode_defaults(force=True)
+        self.count_results = None
+        self.count_settings = None
+        self.detected_preview_frame = None
+        self.refresh_dashboard()
+        self.update_preview()
+        self.update_export_ui_state()
+        self.set_status(
+            f"Status: {self.get_counting_mode_label()} selected.\n"
+            f"Default classes switched to {', '.join(self.get_class_display_label(name) for name in self.get_effective_enabled_classes())}.\n"
+            "You can still adjust classes manually before detection or counting."
+        )
+
+    def sync_dashboard_class_visibility(self):
+        visible_classes = set(self.get_effective_enabled_classes())
+        for class_name, chip_widget in self.overall_class_chip_widgets.items():
+            chip_widget.setVisible(class_name == "total" or class_name in visible_classes)
+
+        for metric_key, header_widget in self.line_class_header_widgets.items():
+            header_widget.setVisible(
+                metric_key in {"line", "total"} or metric_key in visible_classes
+            )
+
+        for widgets in self.line_class_overview_widgets.values():
+            for metric_key, widget in widgets.items():
+                widget.setVisible(metric_key in {"line", "total"} or metric_key in visible_classes)
+
+        for class_name, widgets in self.overall_count_widgets.items():
+            is_visible = class_name in visible_classes
+            widgets["label"].setVisible(is_visible)
+            widgets["value"].setVisible(is_visible)
+
+        for section in self.direction_section_widgets.values():
+            for metric_key, row_widgets in section.get("rows", {}).items():
+                is_visible = metric_key == "total" or metric_key in visible_classes
+                for widget in row_widgets:
+                    widget.setVisible(is_visible)

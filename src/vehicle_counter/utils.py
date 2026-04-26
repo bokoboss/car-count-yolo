@@ -116,6 +116,7 @@ def draw_line_overlay(
     line_color="#ff3b30",
     line_label=None,
     is_selected=False,
+    show_direction_markers=True,
     show_direction_legend=False,
     show_line_label=True,
     show_handles=True,
@@ -139,7 +140,7 @@ def draw_line_overlay(
 
     base_color = QColor(line_color)
     if not is_selected:
-        base_color.setAlpha(150)
+        base_color.setAlpha(145)
 
     line_pen = QPen(base_color, 5 if is_selected else 2)
     painter.setPen(line_pen)
@@ -158,36 +159,41 @@ def draw_line_overlay(
         round(midpoint_y + normal_y * side_offset),
     )
 
-    direction_color = QColor(base_color)
-    direction_pen = QPen(direction_color, 2 if is_selected else 1)
-    painter.setPen(direction_pen)
-    painter.drawLine(side_a_point, side_b_point)
-    draw_arrow_head(
-        painter,
-        side_b_point,
-        tangent_x=normal_x,
-        tangent_y=normal_y,
-        color=direction_color,
-    )
+    if show_direction_markers:
+        direction_color = QColor(base_color)
+        direction_pen = QPen(direction_color, 2 if is_selected else 1)
+        painter.setPen(direction_pen)
+        painter.drawLine(side_a_point, side_b_point)
+        draw_arrow_head(
+            painter,
+            side_b_point,
+            tangent_x=normal_x,
+            tangent_y=normal_y,
+            color=direction_color,
+        )
 
-    draw_side_badge(
-        painter,
-        side_a_point,
-        "A",
-        QColor("#ff9f0a"),
-        is_selected=is_selected,
-    )
-    draw_side_badge(
-        painter,
-        side_b_point,
-        "B",
-        QColor("#34c759"),
-        is_selected=is_selected,
-    )
+        draw_side_badge(
+            painter,
+            side_a_point,
+            "A",
+            QColor("#ff9f0a"),
+            is_selected=is_selected,
+        )
+        draw_side_badge(
+            painter,
+            side_b_point,
+            "B",
+            QColor("#34c759"),
+            is_selected=is_selected,
+        )
     if line_label and show_line_label:
+        badge_point = QPoint(
+            round(midpoint_x - normal_x * (24.0 if show_direction_markers else 18.0)),
+            round(midpoint_y - normal_y * (24.0 if show_direction_markers else 18.0)),
+        )
         draw_line_badge(
             painter,
-            QPoint(round(midpoint_x), round(midpoint_y)),
+            badge_point,
             line_label,
             QColor(line_color),
             is_selected=is_selected,
