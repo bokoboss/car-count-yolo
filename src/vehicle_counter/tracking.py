@@ -1,5 +1,6 @@
 import threading
 import time
+from pathlib import Path
 
 from .detection import get_target_class_ids, load_model, normalize_settings
 from .sources import VideoSource
@@ -14,6 +15,9 @@ from .utils import (
 
 
 TRACKER_CONFIG = "bytetrack.yaml"
+MOTORCYCLE_TRACKER_CONFIG = Path(__file__).with_name("bytetrack_motorcycle.yaml")
+MOTORCYCLE_CLASS_NAME = "motorcycle"
+MOTORCYCLE_CROSSING_TOLERANCE_PIXELS = 12.0
 DIRECTION_NEGATIVE_TO_POSITIVE = "negative_to_positive"
 DIRECTION_POSITIVE_TO_NEGATIVE = "positive_to_negative"
 PROCESSING_STATUS_COMPLETED = "completed"
@@ -68,6 +72,76 @@ def get_crossing_direction(previous_point, current_point, line_start, line_end):
         return DIRECTION_POSITIVE_TO_NEGATIVE
 
     return "unknown"
+
+
+def get_line_length(line_start, line_end):
+    return (
+        (line_end[0] - line_start[0]) ** 2
+        + (line_end[1] - line_start[1]) ** 2
+    ) ** 0.5 or 1.0
+
+
+def signed_distance_to_line(point, line_start, line_end):
+    return point_side(point, line_start, line_end) / get_line_length(line_start, line_end)
+
+
+def distance_point_to_segment(point, segment_start, segment_end):
+    segment_dx = segment_end[0] - segment_start[0]
+    segment_dy = segment_end[1] - segment_start[1]
+    segment_length_squared = segment_dx * segment_dx + segment_dy * segment_dy
+    if segment_length_squared == 0:
+        return (
+            (point[0] - segment_start[0]) ** 2
+            + (point[1] - segment_start[1]) ** 2
+        ) ** 0.5
+
+    projection = (
+        ((point[0] - segment_start[0]) * segment_dx)
+        + ((point[1] - segment_start[1]) * segment_dy)
+    ) / segment_length_squared
+    projection = max(0.0, min(1.0, projection))
+    closest_point = (
+        segment_start[0] + projection * segment_dx,
+        segment_start[1] + projection * segment_dy,
+    )
+    return (
+        (point[0] - closest_point[0]) ** 2
+        + (point[1] - closest_point[1]) ** 2
+    ) ** 0.5
+
+
+def did_cross_line_with_tolerance(
+    previous_point,
+    current_point,
+    line_start,
+    line_end,
+    tolerance_pixels,
+):
+    if did_cross_line(previous_point, current_point, line_start, line_end):
+        return True
+
+    previous_distance = signed_distance_to_line(previous_point, line_start, line_end)
+    current_distance = signed_distance_to_line(current_point, line_start, line_end)
+    near_line = (
+        abs(previous_distance) <= tolerance_pixels
+        or abs(current_distance) <= tolerance_pixels
+        or distance_point_to_segment(line_start, previous_point, current_point) <= tolerance_pixels
+        or distance_point_to_segment(line_end, previous_point, current_point) <= tolerance_pixels
+    )
+    if not near_line:
+        return False
+
+    previous_sign = sign_with_dead_zone(previous_distance, tolerance_pixels)
+    current_sign = sign_with_dead_zone(current_distance, tolerance_pixels)
+    return previous_sign != current_sign and (
+        previous_sign != 0 or current_sign != 0
+    )
+
+
+def sign_with_dead_zone(value, tolerance_pixels):
+    if abs(value) <= tolerance_pixels:
+        return 0
+    return -1 if value < 0 else 1
 
 
 def build_empty_class_counts():
@@ -441,7 +515,7 @@ def process_frame_for_counting(
             frame,
             persist=True,
             classes=target_class_ids,
-            tracker=TRACKER_CONFIG,
+            tracker=get_tracker_config(settings),
             conf=settings["confidence_threshold"],
             verbose=False,
         )
@@ -475,6 +549,12 @@ def process_frame_for_counting(
         counts=counts,
     )
     return latest_frame
+
+
+def get_tracker_config(settings):
+    if settings.get("motorcycle_tracking") and MOTORCYCLE_TRACKER_CONFIG.exists():
+        return str(MOTORCYCLE_TRACKER_CONFIG)
+    return TRACKER_CONFIG
 
 
 def finalize_processing_status(processing_status, latest_frame, playable_input, is_live_source):
@@ -535,14 +615,11 @@ def update_counts_from_result(
     boxes = result.boxes.xyxy.tolist()
 
     for track_id, class_id, box in zip(track_ids, class_ids, boxes):
-        center_point = (
-            (box[0] + box[2]) / 2,
-            (box[1] + box[3]) / 2,
-        )
-        previous_point = last_positions.get(track_id)
+        current_points = build_track_points(box)
+        previous_points = last_positions.get(track_id)
         class_name = model.names[int(class_id)]
 
-        if previous_point:
+        if previous_points:
             for line_key, line_definition in line_definitions.items():
                 counted_track_ids = counts["counted_track_ids"].setdefault(line_key, set())
                 if track_id in counted_track_ids:
@@ -550,11 +627,27 @@ def update_counts_from_result(
 
                 line_start = line_definition["start"]
                 line_end = line_definition["end"]
-                if not did_cross_line(previous_point, center_point, line_start, line_end):
+                previous_point, current_point = get_crossing_points_for_class(
+                    class_name=class_name,
+                    previous_points=previous_points,
+                    current_points=current_points,
+                    line_start=line_start,
+                    line_end=line_end,
+                )
+                if previous_point is None or current_point is None:
                     continue
 
-                direction = get_crossing_direction(
-                    previous_point, center_point, line_start, line_end
+                if not did_cross_for_class(
+                    class_name,
+                    previous_point,
+                    current_point,
+                    line_start,
+                    line_end,
+                ):
+                    continue
+
+                direction = get_crossing_direction_for_class(
+                    class_name, previous_point, current_point, line_start, line_end
                 )
                 counted_track_ids.add(track_id)
                 increment_result_counts(counts, class_name, direction)
@@ -573,7 +666,71 @@ def update_counts_from_result(
                     source_fps=source_fps,
                 )
 
-        last_positions[track_id] = center_point
+        last_positions[track_id] = current_points
+
+
+def build_track_points(box):
+    return {
+        "center": (
+            (box[0] + box[2]) / 2,
+            (box[1] + box[3]) / 2,
+        ),
+        "bottom_center": (
+            (box[0] + box[2]) / 2,
+            box[3],
+        ),
+    }
+
+
+def get_crossing_points_for_class(
+    class_name,
+    previous_points,
+    current_points,
+    line_start,
+    line_end,
+):
+    if class_name != MOTORCYCLE_CLASS_NAME:
+        return previous_points.get("center"), current_points.get("center")
+
+    for point_key in ("center", "bottom_center"):
+        previous_point = previous_points.get(point_key)
+        current_point = current_points.get(point_key)
+        if previous_point is None or current_point is None:
+            continue
+        if did_cross_for_class(class_name, previous_point, current_point, line_start, line_end):
+            return previous_point, current_point
+
+    return previous_points.get("center"), current_points.get("center")
+
+
+def did_cross_for_class(class_name, previous_point, current_point, line_start, line_end):
+    if class_name == MOTORCYCLE_CLASS_NAME:
+        return did_cross_line_with_tolerance(
+            previous_point,
+            current_point,
+            line_start,
+            line_end,
+            MOTORCYCLE_CROSSING_TOLERANCE_PIXELS,
+        )
+    return did_cross_line(previous_point, current_point, line_start, line_end)
+
+
+def get_crossing_direction_for_class(
+    class_name,
+    previous_point,
+    current_point,
+    line_start,
+    line_end,
+):
+    direction = get_crossing_direction(previous_point, current_point, line_start, line_end)
+    if direction != "unknown" or class_name != MOTORCYCLE_CLASS_NAME:
+        return direction
+
+    previous_distance = signed_distance_to_line(previous_point, line_start, line_end)
+    current_distance = signed_distance_to_line(current_point, line_start, line_end)
+    if current_distance >= previous_distance:
+        return DIRECTION_NEGATIVE_TO_POSITIVE
+    return DIRECTION_POSITIVE_TO_NEGATIVE
 
 
 def build_line_definitions(line_points_by_key):

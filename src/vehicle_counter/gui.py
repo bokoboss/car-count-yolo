@@ -1087,6 +1087,9 @@ class MainWindow(QMainWindow):
             enabled_classes = set(preset_settings["enabled_classes"])
             for class_name, checkbox in self.class_checkboxes.items():
                 checkbox.setChecked(class_name in enabled_classes)
+            track_label_mode = preset_settings.get("track_label_mode")
+            if track_label_mode:
+                self.set_track_label_mode(track_label_mode)
         finally:
             self.applying_preset = False
         self.low_latency_manually_overridden = False
@@ -1130,11 +1133,12 @@ class MainWindow(QMainWindow):
                 "prioritize_low_latency_live_streams": False,
             },
             config.PRESET_MOTORCYCLE_FOCUS: {
-                "confidence_threshold": 0.22,
+                "confidence_threshold": 0.20,
                 "frame_skip": 1,
                 "model_size": "medium",
-                "enabled_classes": ["motorcycle", "bicycle", "car"],
+                "enabled_classes": ["car", "motorcycle", "bus", "truck", "bicycle"],
                 "prioritize_low_latency_live_streams": False,
+                "track_label_mode": TRACK_LABEL_MODE_ID_CLASS,
             },
         }
         return preset_map.get(preset_key)
@@ -1638,6 +1642,11 @@ class MainWindow(QMainWindow):
 
     def get_track_label_mode(self):
         return self.track_label_mode_combobox.currentData() or TRACK_LABEL_MODE_OFF
+
+    def set_track_label_mode(self, track_label_mode):
+        index = self.track_label_mode_combobox.findData(track_label_mode)
+        if index >= 0:
+            self.track_label_mode_combobox.setCurrentIndex(index)
 
     def apply_source_aware_low_latency_default(self, force=False):
         if self.low_latency_manually_overridden and not force:
@@ -2328,6 +2337,7 @@ class MainWindow(QMainWindow):
                 "model_size": self.get_model_size_key(),
                 "enabled_classes": enabled_classes,
                 "prioritize_low_latency_live_streams": self.low_latency_live_checkbox.isChecked(),
+                "motorcycle_tracking": self.active_preset_name == "Motorcycle Focus",
             }
         )
         settings["preset_name"] = self.active_preset_name

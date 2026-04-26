@@ -85,6 +85,7 @@ def normalize_settings(settings):
         "prioritize_low_latency_live_streams": normalize_boolean(
             settings.get("prioritize_low_latency_live_streams", True)
         ),
+        "motorcycle_tracking": normalize_boolean(settings.get("motorcycle_tracking", False)),
     }
 
 
