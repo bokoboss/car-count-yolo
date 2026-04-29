@@ -96,6 +96,15 @@ MODEL_OPTION_LABELS = {
 TRACK_LABEL_MODE_OFF = "off"
 TRACK_LABEL_MODE_CLASS_ONLY = "class_only"
 TRACK_LABEL_MODE_ID_CLASS = "id_class"
+DEVICE_OPTION_LABELS = {
+    "auto": "Auto",
+    "cpu": "CPU",
+    "cuda": "CUDA",
+}
+PREVIEW_RENDER_LABELS = {
+    config.PREVIEW_RENDER_ANNOTATED: "Annotated",
+    config.PREVIEW_RENDER_RAW: "Raw Fast",
+}
 
 
 class PreviewLabel(QLabel):
@@ -457,6 +466,30 @@ class MainWindow(QMainWindow):
         )
         form_layout.addRow("Low Latency", self.low_latency_live_checkbox)
 
+        self.imgsz_spinbox = QSpinBox()
+        self.imgsz_spinbox.setRange(320, 1280)
+        self.imgsz_spinbox.setSingleStep(32)
+        self.imgsz_spinbox.setValue(config.DEFAULT_IMAGE_SIZE)
+        self.imgsz_spinbox.setToolTip("Larger values can improve small-object accuracy but need more compute.")
+        form_layout.addRow("Image Size", self.imgsz_spinbox)
+
+        self.device_combobox = QComboBox()
+        for device_key, label in DEVICE_OPTION_LABELS.items():
+            self.device_combobox.addItem(label, device_key)
+        self.device_combobox.setToolTip("Auto lets Ultralytics choose the best available device.")
+        form_layout.addRow("Device", self.device_combobox)
+
+        self.half_precision_checkbox = QCheckBox("Use half precision when supported")
+        self.half_precision_checkbox.setChecked(config.DEFAULT_HALF_PRECISION)
+        self.half_precision_checkbox.setToolTip("Best for CUDA GPUs. Keep off on CPU.")
+        form_layout.addRow("Half Precision", self.half_precision_checkbox)
+
+        self.preview_render_combobox = QComboBox()
+        for render_key, label in PREVIEW_RENDER_LABELS.items():
+            self.preview_render_combobox.addItem(label, render_key)
+        self.preview_render_combobox.setToolTip("Raw Fast skips box drawing during counting unless labels or video review are enabled.")
+        form_layout.addRow("Preview Render", self.preview_render_combobox)
+
         annotated_video_widget = QWidget()
         annotated_video_layout = QGridLayout(annotated_video_widget)
         annotated_video_layout.setContentsMargins(0, 0, 0, 0)
@@ -790,6 +823,9 @@ class MainWindow(QMainWindow):
             ("model_size", "Model"),
             ("confidence_threshold", "Confidence"),
             ("frame_skip", "Frame Skip"),
+            ("imgsz", "Image Size"),
+            ("device", "Device"),
+            ("preview_render_mode", "Render"),
             ("low_latency", "Low Latency"),
             ("annotated_video", "Annotated Video"),
         )):
@@ -1025,6 +1061,10 @@ class MainWindow(QMainWindow):
         self.frame_skip_spinbox.valueChanged.connect(self.handle_manual_setting_changed)
         self.model_size_combobox.currentIndexChanged.connect(self.handle_manual_setting_changed)
         self.low_latency_live_checkbox.stateChanged.connect(self.handle_low_latency_changed)
+        self.imgsz_spinbox.valueChanged.connect(self.handle_manual_setting_changed)
+        self.device_combobox.currentIndexChanged.connect(self.handle_manual_setting_changed)
+        self.half_precision_checkbox.stateChanged.connect(self.handle_manual_setting_changed)
+        self.preview_render_combobox.currentIndexChanged.connect(self.handle_manual_setting_changed)
         for checkbox in self.class_checkboxes.values():
             checkbox.stateChanged.connect(self.handle_manual_setting_changed)
 
@@ -1039,6 +1079,8 @@ class MainWindow(QMainWindow):
 
         preset_settings = self.get_preset_settings(preset_key)
         if preset_settings is None:
+            self.set_preset_combobox_value(config.PRESET_CUSTOM)
+            self.set_active_preset_name("Custom")
             return
 
         self.apply_preset_settings(preset_key, preset_settings)
@@ -1063,6 +1105,14 @@ class MainWindow(QMainWindow):
             self.confidence_spinbox.setValue(preset_settings["confidence_threshold"])
             self.frame_skip_spinbox.setValue(preset_settings["frame_skip"])
             self.set_model_combobox_value(preset_settings["model_size"])
+            self.imgsz_spinbox.setValue(preset_settings.get("imgsz", config.DEFAULT_IMAGE_SIZE))
+            self.set_device_combobox_value(preset_settings.get("device", config.DEFAULT_DEVICE))
+            self.half_precision_checkbox.setChecked(
+                bool(preset_settings.get("half", config.DEFAULT_HALF_PRECISION))
+            )
+            self.set_preview_render_combobox_value(
+                preset_settings.get("preview_render_mode", config.DEFAULT_PREVIEW_RENDER_MODE)
+            )
             self.low_latency_live_checkbox.setChecked(
                 preset_settings["prioritize_low_latency_live_streams"]
             )
@@ -1098,11 +1148,55 @@ class MainWindow(QMainWindow):
         if index >= 0:
             self.model_size_combobox.setCurrentIndex(index)
 
+    def set_device_combobox_value(self, device_key):
+        index = self.device_combobox.findData(device_key or config.DEFAULT_DEVICE)
+        if index >= 0:
+            self.device_combobox.setCurrentIndex(index)
+
+    def set_preview_render_combobox_value(self, render_key):
+        index = self.preview_render_combobox.findData(
+            render_key or config.DEFAULT_PREVIEW_RENDER_MODE
+        )
+        if index >= 0:
+            self.preview_render_combobox.setCurrentIndex(index)
+
     def set_active_preset_name(self, preset_name):
         self.active_preset_name = preset_name
         self.active_preset_label.setText(f"Active preset: {preset_name}")
 
     def get_preset_settings(self, preset_key):
+        if self.counting_mode == config.COUNTING_MODE_PEOPLE:
+            people_preset_map = {
+                config.PRESET_LIVE_LOW_LATENCY: {
+                    "confidence_threshold": 0.35,
+                    "frame_skip": 2,
+                    "model_size": "nano",
+                    "enabled_classes": list(config.PEOPLE_ENABLED_CLASSES),
+                    "prioritize_low_latency_live_streams": True,
+                    "imgsz": 640,
+                    "device": config.DEFAULT_DEVICE,
+                    "half": False,
+                    "preview_render_mode": config.PREVIEW_RENDER_RAW,
+                },
+                config.PRESET_BALANCED_COUNTING: {
+                    "confidence_threshold": 0.35,
+                    "frame_skip": 1,
+                    "model_size": "small",
+                    "enabled_classes": list(config.PEOPLE_ENABLED_CLASSES),
+                    "prioritize_low_latency_live_streams": False,
+                    "imgsz": 768,
+                    "device": config.DEFAULT_DEVICE,
+                    "half": False,
+                    "preview_render_mode": config.PREVIEW_RENDER_ANNOTATED,
+                },
+                config.PRESET_MOTORCYCLE_FOCUS: None,
+            }
+            if preset_key == config.PRESET_MOTORCYCLE_FOCUS:
+                self.set_status(
+                    "Status: Motorcycle Focus is only available in Vehicle Counting mode."
+                )
+            return people_preset_map.get(preset_key)
+
         preset_map = {
             config.PRESET_LIVE_LOW_LATENCY: {
                 "confidence_threshold": 0.35,
@@ -1110,6 +1204,10 @@ class MainWindow(QMainWindow):
                 "model_size": "nano",
                 "enabled_classes": ["car", "motorcycle", "bus", "truck"],
                 "prioritize_low_latency_live_streams": True,
+                "imgsz": 640,
+                "device": config.DEFAULT_DEVICE,
+                "half": False,
+                "preview_render_mode": config.PREVIEW_RENDER_RAW,
             },
             config.PRESET_BALANCED_COUNTING: {
                 "confidence_threshold": config.DEFAULT_CONFIDENCE_THRESHOLD,
@@ -1117,6 +1215,10 @@ class MainWindow(QMainWindow):
                 "model_size": "small",
                 "enabled_classes": list(config.VEHICLE_ENABLED_CLASSES),
                 "prioritize_low_latency_live_streams": False,
+                "imgsz": config.DEFAULT_IMAGE_SIZE,
+                "device": config.DEFAULT_DEVICE,
+                "half": False,
+                "preview_render_mode": config.PREVIEW_RENDER_ANNOTATED,
             },
             config.PRESET_MOTORCYCLE_FOCUS: {
                 "confidence_threshold": 0.20,
@@ -1124,6 +1226,10 @@ class MainWindow(QMainWindow):
                 "model_size": "medium",
                 "enabled_classes": list(config.VEHICLE_ENABLED_CLASSES),
                 "prioritize_low_latency_live_streams": False,
+                "imgsz": 768,
+                "device": config.DEFAULT_DEVICE,
+                "half": False,
+                "preview_render_mode": config.PREVIEW_RENDER_ANNOTATED,
                 "track_label_mode": TRACK_LABEL_MODE_ID_CLASS,
             },
         }
@@ -1904,6 +2010,10 @@ class MainWindow(QMainWindow):
         self.frame_skip_spinbox.setEnabled(not self.is_counting)
         self.model_size_combobox.setEnabled(not self.is_counting)
         self.low_latency_live_checkbox.setEnabled(not self.is_counting)
+        self.imgsz_spinbox.setEnabled(not self.is_counting)
+        self.device_combobox.setEnabled(not self.is_counting)
+        self.half_precision_checkbox.setEnabled(not self.is_counting)
+        self.preview_render_combobox.setEnabled(not self.is_counting)
         for checkbox in self.class_checkboxes.values():
             checkbox.setEnabled(not self.is_counting)
         self.update_export_ui_state()
@@ -2175,6 +2285,18 @@ class MainWindow(QMainWindow):
         self.run_settings_value_labels["frame_skip"].setText(
             str(active_settings.get("frame_skip", self.frame_skip_spinbox.value()))
         )
+        self.run_settings_value_labels["imgsz"].setText(
+            str(active_settings.get("imgsz", self.imgsz_spinbox.value()))
+        )
+        self.run_settings_value_labels["device"].setText(
+            str(active_settings.get("device_label", self.get_device_label()))
+        )
+        render_mode = active_settings.get(
+            "preview_render_mode", self.get_preview_render_mode()
+        )
+        self.run_settings_value_labels["preview_render_mode"].setText(
+            PREVIEW_RENDER_LABELS.get(render_mode, render_mode)
+        )
         self.run_settings_value_labels["low_latency"].setText(
             "On"
             if active_settings.get(
@@ -2238,6 +2360,11 @@ class MainWindow(QMainWindow):
             "model_size_label": self.get_model_display_label(),
             "confidence_threshold": self.confidence_spinbox.value(),
             "frame_skip": self.frame_skip_spinbox.value(),
+            "imgsz": self.imgsz_spinbox.value(),
+            "device": self.get_device_key(),
+            "device_label": self.get_device_label(),
+            "half": self.half_precision_checkbox.isChecked(),
+            "preview_render_mode": self.get_preview_render_mode(),
             "prioritize_low_latency_live_streams": self.low_latency_live_checkbox.isChecked(),
             "annotated_video_enabled": self.save_annotated_video_checkbox.isChecked(),
         }
@@ -2524,12 +2651,21 @@ class MainWindow(QMainWindow):
                 "model_size": self.get_model_size_key(),
                 "enabled_classes": enabled_classes,
                 "prioritize_low_latency_live_streams": self.low_latency_live_checkbox.isChecked(),
-                "motorcycle_tracking": self.active_preset_name == "Motorcycle Focus",
+                "motorcycle_tracking": (
+                    self.counting_mode == config.COUNTING_MODE_VEHICLE
+                    and self.active_preset_name == "Motorcycle Focus"
+                ),
+                "counting_mode": self.counting_mode,
+                "imgsz": self.imgsz_spinbox.value(),
+                "device": self.get_device_key(),
+                "half": self.half_precision_checkbox.isChecked(),
+                "preview_render_mode": self.get_preview_render_mode(),
             }
         )
         settings["counting_mode"] = self.counting_mode
         settings["preset_name"] = self.active_preset_name
         settings["model_size_label"] = self.get_model_display_label()
+        settings["device_label"] = self.get_device_label()
         settings["annotated_video_enabled"] = self.save_annotated_video_checkbox.isChecked()
         return settings
 
@@ -2553,6 +2689,10 @@ class MainWindow(QMainWindow):
             for class_name, checkbox in self.class_checkboxes.items()
             if checkbox.isChecked()
         ]
+        mode_allowed_classes = set(config.get_default_enabled_classes_for_mode(self.counting_mode))
+        enabled_classes = [
+            class_name for class_name in enabled_classes if class_name in mode_allowed_classes
+        ]
         if not enabled_classes:
             self.set_status("Status: Select at least one class in the settings area.")
             return None
@@ -2574,6 +2714,15 @@ class MainWindow(QMainWindow):
 
     def get_counting_mode_label(self):
         return COUNTING_MODE_LABELS.get(self.counting_mode, "Counting")
+
+    def get_device_key(self):
+        return self.device_combobox.currentData() or config.DEFAULT_DEVICE
+
+    def get_device_label(self):
+        return DEVICE_OPTION_LABELS.get(self.get_device_key(), self.get_device_key())
+
+    def get_preview_render_mode(self):
+        return self.preview_render_combobox.currentData() or config.DEFAULT_PREVIEW_RENDER_MODE
 
     def get_count_target_singular(self):
         return "person" if self.counting_mode == config.COUNTING_MODE_PEOPLE else "vehicle"

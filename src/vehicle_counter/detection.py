@@ -1,4 +1,7 @@
-ROAD_USER_CLASS_NAMES = ("bicycle", "car", "motorcycle", "bus", "truck")
+from . import config
+
+
+ROAD_USER_CLASS_NAMES = config.SUPPORTED_COUNT_CLASSES
 MODEL_NAME_BY_SIZE = {
     "nano": "yolo11n.pt",
     "small": "yolo11s.pt",
@@ -43,11 +46,13 @@ def detect_vehicles(frame, settings=None):
     target_class_ids = get_target_class_ids(model, settings["enabled_classes"])
 
     try:
+        inference_options = build_inference_options(settings)
         results = model.predict(
             frame,
             classes=target_class_ids,
             conf=settings["confidence_threshold"],
             verbose=False,
+            **inference_options,
         )
     except Exception as exc:
         return None, None, f"Detection failed while running inference: {exc}"
@@ -73,19 +78,31 @@ def detect_vehicles(frame, settings=None):
 
 def normalize_settings(settings):
     settings = settings or {}
+    counting_mode = config.normalize_counting_mode(
+        settings.get("counting_mode", config.DEFAULT_COUNTING_MODE)
+    )
     return {
+        "counting_mode": counting_mode,
         "confidence_threshold": normalize_confidence_threshold(
             settings.get("confidence_threshold", 0.30)
         ),
         "frame_skip": normalize_frame_skip(settings.get("frame_skip", 1)),
         "model_size": normalize_model_size(settings.get("model_size", "nano")),
         "enabled_classes": normalize_enabled_classes(
-            settings.get("enabled_classes", ROAD_USER_CLASS_NAMES)
+            settings.get("enabled_classes"),
+            counting_mode=counting_mode,
         ),
         "prioritize_low_latency_live_streams": normalize_boolean(
             settings.get("prioritize_low_latency_live_streams", True)
         ),
         "motorcycle_tracking": normalize_boolean(settings.get("motorcycle_tracking", False)),
+        "imgsz": normalize_image_size(settings.get("imgsz", config.DEFAULT_IMAGE_SIZE)),
+        "device": normalize_device(settings.get("device", config.DEFAULT_DEVICE)),
+        "half": normalize_boolean(settings.get("half", config.DEFAULT_HALF_PRECISION)),
+        "tracker_config": normalize_tracker_config(settings.get("tracker_config")),
+        "preview_render_mode": normalize_preview_render_mode(
+            settings.get("preview_render_mode", config.DEFAULT_PREVIEW_RENDER_MODE)
+        ),
     }
 
 
@@ -95,6 +112,16 @@ def normalize_confidence_threshold(value):
     except (TypeError, ValueError):
         return 0.30
     return max(0.0, min(1.0, value))
+
+
+def build_inference_options(settings):
+    options = {
+        "imgsz": settings["imgsz"],
+        "half": settings["half"],
+    }
+    if settings.get("device") is not None:
+        options["device"] = settings["device"]
+    return options
 
 
 def normalize_frame_skip(value):
@@ -111,14 +138,48 @@ def normalize_model_size(value):
     return "nano"
 
 
-def normalize_enabled_classes(value):
+def normalize_enabled_classes(value, counting_mode=None):
+    default_classes = config.get_default_enabled_classes_for_mode(
+        config.normalize_counting_mode(counting_mode)
+    )
     if not value:
-        return list(ROAD_USER_CLASS_NAMES)
+        return list(default_classes)
 
-    normalized_classes = [class_name for class_name in value if class_name in ROAD_USER_CLASS_NAMES]
+    allowed_classes = set(default_classes)
+    normalized_classes = [
+        class_name
+        for class_name in value
+        if class_name in ROAD_USER_CLASS_NAMES and class_name in allowed_classes
+    ]
     if not normalized_classes:
-        return list(ROAD_USER_CLASS_NAMES)
+        return list(default_classes)
     return normalized_classes
+
+
+def normalize_image_size(value):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return config.DEFAULT_IMAGE_SIZE
+    return max(320, min(1280, value))
+
+
+def normalize_device(value):
+    if value in (None, "", "auto"):
+        return None
+    return str(value).strip()
+
+
+def normalize_tracker_config(value):
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def normalize_preview_render_mode(value):
+    if value == config.PREVIEW_RENDER_RAW:
+        return config.PREVIEW_RENDER_RAW
+    return config.PREVIEW_RENDER_ANNOTATED
 
 
 def normalize_boolean(value):

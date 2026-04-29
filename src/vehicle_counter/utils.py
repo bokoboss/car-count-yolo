@@ -367,7 +367,16 @@ def draw_review_summary_overlay(frame, counts_snapshot, direction_labels_by_line
         )
 
 
-def render_tracking_preview_frame(result, model, track_label_mode="off"):
+def render_tracking_preview_frame(
+    result,
+    model,
+    track_label_mode="off",
+    render_mode="annotated",
+    source_frame=None,
+):
+    if render_mode == "raw":
+        return source_frame.copy() if source_frame is not None else result.orig_img.copy()
+
     base_frame = result.plot(labels=False, conf=False)
     if track_label_mode == "off":
         return base_frame

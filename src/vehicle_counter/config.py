@@ -2,14 +2,38 @@
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.30
 DEFAULT_FRAME_SKIP = 1
+DEFAULT_IMAGE_SIZE = 640
+DEFAULT_DEVICE = "auto"
+DEFAULT_HALF_PRECISION = False
+PREVIEW_RENDER_ANNOTATED = "annotated"
+PREVIEW_RENDER_RAW = "raw"
+DEFAULT_PREVIEW_RENDER_MODE = PREVIEW_RENDER_ANNOTATED
 MODEL_SIZE_OPTIONS = ("nano", "small", "medium")
-DEFAULT_ENABLED_CLASSES = ("car", "motorcycle", "bus", "truck", "bicycle")
+COUNTING_MODE_VEHICLE = "vehicle"
+COUNTING_MODE_PEOPLE = "people"
+DEFAULT_COUNTING_MODE = COUNTING_MODE_VEHICLE
+VEHICLE_ENABLED_CLASSES = ("car", "motorcycle", "bus", "truck", "bicycle")
+PEOPLE_ENABLED_CLASSES = ("person",)
+SUPPORTED_COUNT_CLASSES = VEHICLE_ENABLED_CLASSES + PEOPLE_ENABLED_CLASSES
+DEFAULT_ENABLED_CLASSES = VEHICLE_ENABLED_CLASSES
 PRESET_CUSTOM = "custom"
 PRESET_LIVE_LOW_LATENCY = "live_low_latency"
 PRESET_BALANCED_COUNTING = "balanced_counting"
 PRESET_MOTORCYCLE_FOCUS = "motorcycle_focus"
 DEFAULT_PRESET = PRESET_BALANCED_COUNTING
 DEFAULT_MODEL_SIZE = "small"
+
+
+def get_default_enabled_classes_for_mode(counting_mode):
+    if counting_mode == COUNTING_MODE_PEOPLE:
+        return list(PEOPLE_ENABLED_CLASSES)
+    return list(VEHICLE_ENABLED_CLASSES)
+
+
+def normalize_counting_mode(counting_mode):
+    if counting_mode == COUNTING_MODE_PEOPLE:
+        return COUNTING_MODE_PEOPLE
+    return COUNTING_MODE_VEHICLE
 
 # UI settings
 WINDOW_TITLE = "Vehicle Counter"

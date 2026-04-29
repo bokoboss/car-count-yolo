@@ -3,22 +3,19 @@ import time
 from pathlib import Path
 
 from . import config
-from .detection import get_target_class_ids, load_model, normalize_settings
+from .detection import build_inference_options, get_target_class_ids, load_model, normalize_settings
 from .sources import VideoSource
-from .utils import (
-    build_video_writer,
-    draw_review_overlay,
-    is_direct_stream_url,
-    is_remote_video_source,
-    open_video_capture,
-    render_tracking_preview_frame,
-)
 
 
 TRACKER_CONFIG = "bytetrack.yaml"
 MOTORCYCLE_TRACKER_CONFIG = Path(__file__).with_name("bytetrack_motorcycle.yaml")
 MOTORCYCLE_CLASS_NAME = "motorcycle"
 MOTORCYCLE_CROSSING_TOLERANCE_PIXELS = 12.0
+PERSON_CLASS_NAME = "person"
+PERSON_CROSSING_HYSTERESIS_PIXELS = 2.0
+PERSON_MINIMUM_CROSSING_MOVEMENT_PIXELS = 4.0
+RECENT_CROSSING_FRAME_WINDOW = 12
+RECENT_CROSSING_DISTANCE_PIXELS = 28.0
 DIRECTION_NEGATIVE_TO_POSITIVE = "negative_to_positive"
 DIRECTION_POSITIVE_TO_NEGATIVE = "positive_to_negative"
 PROCESSING_STATUS_COMPLETED = "completed"
@@ -48,6 +45,31 @@ def did_cross_line(previous_point, current_point, line_start, line_end):
         return True
 
     return (previous_side < 0 < current_side) or (current_side < 0 < previous_side)
+
+
+def did_cross_line_strict(
+    previous_point,
+    current_point,
+    line_start,
+    line_end,
+    hysteresis_pixels=0.0,
+    minimum_movement_pixels=0.0,
+):
+    previous_distance = signed_distance_to_line(previous_point, line_start, line_end)
+    current_distance = signed_distance_to_line(current_point, line_start, line_end)
+    previous_sign = sign_with_dead_zone(previous_distance, hysteresis_pixels)
+    current_sign = sign_with_dead_zone(current_distance, hysteresis_pixels)
+    moved_distance = (
+        (current_point[0] - previous_point[0]) ** 2
+        + (current_point[1] - previous_point[1]) ** 2
+    ) ** 0.5
+
+    return (
+        previous_sign != 0
+        and current_sign != 0
+        and previous_sign != current_sign
+        and moved_distance >= minimum_movement_pixels
+    )
 
 
 def get_crossing_direction(previous_point, current_point, line_start, line_end):
@@ -176,6 +198,7 @@ def build_empty_counts(line_keys=None):
             for line_key in line_keys
         },
         "counted_track_ids": {line_key: set() for line_key in line_keys},
+        "recent_crossings": {line_key: [] for line_key in line_keys},
         "processed_frames": 0,
         "events": [],
         "event_sequence": 0,
@@ -222,6 +245,8 @@ def track_vehicles(
     )
 
     try:
+        from .utils import is_direct_stream_url, open_video_capture
+
         capture, error_message = open_video_capture(
             playable_input,
             is_live=is_live_source,
@@ -506,6 +531,7 @@ def process_frame_for_counting(
     counts["processed_frames"] += 1
 
     try:
+        inference_options = build_inference_options(settings)
         results = model.track(
             frame,
             persist=True,
@@ -513,6 +539,7 @@ def process_frame_for_counting(
             tracker=get_tracker_config(settings),
             conf=settings["confidence_threshold"],
             verbose=False,
+            **inference_options,
         )
     except Exception as exc:
         return build_processing_status(
@@ -524,10 +551,15 @@ def process_frame_for_counting(
         return frame.copy()
 
     result = results[0]
+    from .utils import render_tracking_preview_frame
+
+    render_mode = get_effective_render_mode(settings, track_label_mode, annotated_video_session)
     latest_frame = render_tracking_preview_frame(
         result=result,
         model=model,
         track_label_mode=track_label_mode,
+        render_mode=render_mode,
+        source_frame=frame,
     )
     update_counts_from_result(
         result=result,
@@ -547,12 +579,24 @@ def process_frame_for_counting(
 
 
 def get_tracker_config(settings):
+    if settings.get("tracker_config"):
+        return settings["tracker_config"]
     if settings.get("motorcycle_tracking") and MOTORCYCLE_TRACKER_CONFIG.exists():
         return str(MOTORCYCLE_TRACKER_CONFIG)
     return TRACKER_CONFIG
 
 
+def get_effective_render_mode(settings, track_label_mode, annotated_video_session):
+    if track_label_mode != "off":
+        return config.PREVIEW_RENDER_ANNOTATED
+    if annotated_video_session and annotated_video_session.get("enabled"):
+        return config.PREVIEW_RENDER_ANNOTATED
+    return settings.get("preview_render_mode", config.DEFAULT_PREVIEW_RENDER_MODE)
+
+
 def finalize_processing_status(processing_status, latest_frame, playable_input, is_live_source):
+    from .utils import is_direct_stream_url, is_remote_video_source
+
     status_code = processing_status["code"]
     if status_code != PROCESSING_STATUS_COMPLETED:
         return processing_status
@@ -644,7 +688,26 @@ def update_counts_from_result(
                 direction = get_crossing_direction_for_class(
                     class_name, previous_point, current_point, line_start, line_end
                 )
+                if is_duplicate_recent_crossing(
+                    counts=counts,
+                    line_key=line_key,
+                    class_name=class_name,
+                    direction=direction,
+                    crossing_point=current_point,
+                    frame_index=frame_index,
+                ):
+                    counted_track_ids.add(track_id)
+                    continue
+
                 counted_track_ids.add(track_id)
+                remember_recent_crossing(
+                    counts=counts,
+                    line_key=line_key,
+                    class_name=class_name,
+                    direction=direction,
+                    crossing_point=current_point,
+                    frame_index=frame_index,
+                )
                 increment_result_counts(counts, class_name, direction)
                 increment_result_counts(
                     counts["line_results"][line_key],
@@ -684,6 +747,9 @@ def get_crossing_points_for_class(
     line_start,
     line_end,
 ):
+    if class_name == PERSON_CLASS_NAME:
+        return previous_points.get("bottom_center"), current_points.get("bottom_center")
+
     if class_name != MOTORCYCLE_CLASS_NAME:
         return previous_points.get("center"), current_points.get("center")
 
@@ -706,6 +772,15 @@ def did_cross_for_class(class_name, previous_point, current_point, line_start, l
             line_start,
             line_end,
             MOTORCYCLE_CROSSING_TOLERANCE_PIXELS,
+        )
+    if class_name == PERSON_CLASS_NAME:
+        return did_cross_line_strict(
+            previous_point,
+            current_point,
+            line_start,
+            line_end,
+            PERSON_CROSSING_HYSTERESIS_PIXELS,
+            PERSON_MINIMUM_CROSSING_MOVEMENT_PIXELS,
         )
     return did_cross_line(previous_point, current_point, line_start, line_end)
 
@@ -748,6 +823,57 @@ def increment_result_counts(result_bucket, class_name, direction):
     result_bucket["total"] += 1
 
 
+def is_duplicate_recent_crossing(
+    counts,
+    line_key,
+    class_name,
+    direction,
+    crossing_point,
+    frame_index,
+):
+    recent_crossings = counts.get("recent_crossings", {}).get(line_key, [])
+    for crossing in recent_crossings:
+        if frame_index - crossing["frame_index"] > RECENT_CROSSING_FRAME_WINDOW:
+            continue
+        if crossing["class_name"] != class_name or crossing["direction"] != direction:
+            continue
+        if distance_between_points(crossing["point"], crossing_point) <= RECENT_CROSSING_DISTANCE_PIXELS:
+            return True
+    return False
+
+
+def remember_recent_crossing(
+    counts,
+    line_key,
+    class_name,
+    direction,
+    crossing_point,
+    frame_index,
+):
+    recent_crossings_by_line = counts.setdefault("recent_crossings", {})
+    recent_crossings = recent_crossings_by_line.setdefault(line_key, [])
+    recent_crossings.append(
+        {
+            "class_name": class_name,
+            "direction": direction,
+            "point": crossing_point,
+            "frame_index": frame_index,
+        }
+    )
+    recent_crossings_by_line[line_key] = [
+        crossing
+        for crossing in recent_crossings
+        if frame_index - crossing["frame_index"] <= RECENT_CROSSING_FRAME_WINDOW
+    ]
+
+
+def distance_between_points(first_point, second_point):
+    return (
+        (first_point[0] - second_point[0]) ** 2
+        + (first_point[1] - second_point[1]) ** 2
+    ) ** 0.5
+
+
 def append_count_event(
     counts,
     line_key,
@@ -768,6 +894,7 @@ def append_count_event(
             "event_id": f"EVT-{counts['event_sequence']:06d}",
             "line_id": line_key,
             "direction": direction,
+            "count_class": class_name,
             "vehicle_class": class_name,
             "track_id": track_id,
             "frame_index": frame_index,
@@ -857,6 +984,8 @@ def build_annotated_video_session(annotated_video_options, line_points_by_key):
 
 
 def write_annotated_video_frame(annotated_video_session, source_frame, counts):
+    from .utils import build_video_writer, draw_review_overlay
+
     if not annotated_video_session or not annotated_video_session.get("enabled"):
         return
     if annotated_video_session.get("failed"):
@@ -1017,6 +1146,8 @@ class LiveFrameBuffer:
         return False
 
     def _attempt_reopen(self):
+        from .utils import open_video_capture
+
         with self.lock:
             if self.reopen_attempts >= LIVE_MAX_REOPEN_ATTEMPTS:
                 return False

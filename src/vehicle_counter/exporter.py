@@ -3,8 +3,6 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-from openpyxl import Workbook
-
 from . import config
 
 DIRECTION_NEGATIVE_TO_POSITIVE = "negative_to_positive"
@@ -57,6 +55,10 @@ def build_export_tables(results, source_details, direction_labels, settings):
         "model_size_label": settings.get("model_size_label", settings.get("model_size", "")),
         "confidence_threshold": settings.get("confidence_threshold", ""),
         "frame_skip": settings.get("frame_skip", ""),
+        "imgsz": settings.get("imgsz", ""),
+        "device": settings.get("device_label", settings.get("device", "")),
+        "half_precision": settings.get("half", False),
+        "preview_render_mode": settings.get("preview_render_mode", ""),
         "low_latency_mode": settings.get("prioritize_low_latency_live_streams", False),
         "annotated_video_enabled": settings.get("annotated_video_enabled", False),
         "enabled_classes": ", ".join(settings.get("enabled_classes", [])),
@@ -171,6 +173,8 @@ def write_csv_exports(file_path, export_data):
 
 
 def write_xlsx_export(file_path, export_data):
+    from openpyxl import Workbook
+
     workbook = Workbook()
 
     summary_sheet = workbook.active
@@ -235,6 +239,7 @@ def build_event_rows(results, source_display_name, direction_labels):
         line_id = event.get("line_id", "")
         labels = direction_labels.get(line_id, {})
         direction = event.get("direction", "")
+        count_class = event.get("count_class", event.get("vehicle_class", ""))
         direction_label = labels.get(direction, DIRECTION_TO_EXPORT_LABEL.get(direction, ""))
         direction_a_label = labels.get(DIRECTION_NEGATIVE_TO_POSITIVE, "A -> B")
         direction_b_label = labels.get(DIRECTION_POSITIVE_TO_NEGATIVE, "B -> A")
@@ -246,7 +251,7 @@ def build_event_rows(results, source_display_name, direction_labels):
                 "line_name": build_line_name(line_id, direction_a_label, direction_b_label),
                 "direction": DIRECTION_TO_EXPORT_LABEL.get(direction, direction),
                 "direction_label": direction_label,
-                "count_class": event.get("vehicle_class", ""),
+                "count_class": count_class,
                 "track_id": event.get("track_id", ""),
                 "frame_index": event.get("frame_index", ""),
                 "elapsed_seconds": event.get("elapsed_seconds", ""),
